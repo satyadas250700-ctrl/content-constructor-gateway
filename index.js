@@ -1,5 +1,5 @@
-const express = require("express");
-const https = require("https");
+    const express = require("express");
+const { Agent } = require("node:https");
 const GigaChat = require("gigachat");
 
 const app = express();
@@ -17,20 +17,18 @@ const BRIDGE_KEY = process.env.BRIDGE_KEY;
 // ============================================================
 //
 // GigaChat использует сертификат НУЦ Минцифры.
-// В нашей текущей архитектуре отключаем проверку сертификата,
-// чтобы обойти SSL CERTIFICATE_VERIFY_FAILED.
+// Временно отключаем проверку сертификата.
 //
-// В дальнейшем можно перейти на проверку конкретного
-// корневого сертификата НУЦ Минцифры.
-//
+// Это соответствует официальному примеру JS SDK GigaChat.
+// ============================================================
 
-const httpsAgent = new https.Agent({
+const httpsAgent = new Agent({
   rejectUnauthorized: false
 });
 
 
 // ============================================================
-// ПРОВЕРКА КОНФИГУРАЦИИ
+// ПРОВЕРКА НАСТРОЕК
 // ============================================================
 
 if (!GIGACHAT_KEY) {
@@ -43,7 +41,7 @@ if (!BRIDGE_KEY) {
 
 
 // ============================================================
-// HEALTH CHECK
+// ПРОВЕРКА РАБОТЫ ШЛЮЗА
 // ============================================================
 
 app.get("/", (req, res) => {
@@ -58,7 +56,7 @@ app.get("/", (req, res) => {
 
 
 // ============================================================
-// ОСНОВНОЙ ENDPOINT
+// ОСНОВНОЙ ENDPOINT ДЛЯ SALEBOT
 // ============================================================
 
 app.post("/generate", async (req, res) => {
@@ -66,7 +64,7 @@ app.post("/generate", async (req, res) => {
   try {
 
     // --------------------------------------------------------
-    // 1. Проверяем настройки
+    // 1. Проверяем секреты
     // --------------------------------------------------------
 
     if (!GIGACHAT_KEY) {
@@ -95,16 +93,13 @@ app.post("/generate", async (req, res) => {
     // --------------------------------------------------------
 
     const {
-
       bridge_key,
-
       content_type,
       business_info,
       target_audience,
       content_goal,
       reels_topic,
       content_style
-
     } = req.body;
 
 
@@ -115,13 +110,9 @@ app.post("/generate", async (req, res) => {
     if (bridge_key !== BRIDGE_KEY) {
 
       return res.status(401).json({
-
         ok: false,
-
         stage: "security",
-
         error: "Invalid bridge_key"
-
       });
 
     }
@@ -131,13 +122,17 @@ app.post("/generate", async (req, res) => {
     // 4. Создаём клиента GigaChat
     // --------------------------------------------------------
 
-    const client = new GigaChat({
+    const giga = new GigaChat({
 
-      credentials: GIGACHAT_KEY,
+      timeout: 600,
 
       model: "GigaChat-3-Ultra",
 
-      timeout: 600,
+      credentials: GIGACHAT_KEY,
+
+      scope: "GIGACHAT_API_PERS",
+
+      baseUrl: "https://api.giga.chat/api/v1",
 
       httpsAgent: httpsAgent
 
@@ -272,25 +267,19 @@ CTA.
     // 6. Отправляем запрос в GigaChat
     // --------------------------------------------------------
 
-    const response = await client.chat({
+    const response = await giga.chat({
 
       messages: [
 
         {
-
           role: "system",
-
           content:
             "Ты профессиональный контент-маркетолог, контент-стратег и сценарист. Отвечай на русском языке."
-
         },
 
         {
-
           role: "user",
-
           content: prompt
-
         }
 
       ],
@@ -349,15 +338,16 @@ CTA.
 
   } catch (error) {
 
-    console.error("Gateway error:", error);
+    console.error("GigaChat error:", error);
 
     return res.status(500).json({
 
       ok: false,
 
-      stage: "gateway",
+      stage: "gigachat",
 
-      error: String(error.message || error)
+      error:
+        String(error.message || error)
 
     });
 
@@ -367,7 +357,7 @@ CTA.
 
 
 // ============================================================
-// ЗАПУСК СЕРВЕРА
+// ЗАПУСК
 // ============================================================
 
 app.listen(PORT, "0.0.0.0", () => {
