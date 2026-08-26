@@ -62,6 +62,11 @@ app.get("/", (req, res) => {
 app.post("/generate", async (req, res) => {
 
   try {
+      
+console.log("=== SALEBOT REQUEST RECEIVED ===");
+console.log("Content-Type:", req.headers["content-type"]);
+console.log("Body exists:", !!req.body);
+console.log("Body keys:", req.body ? Object.keys(req.body) : []);
 
     // --------------------------------------------------------
     // 1. Проверяем секреты
