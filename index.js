@@ -123,20 +123,16 @@ const content_style = body.content_style;
     // --------------------------------------------------------
 
     const giga = new GigaChat({
-
-      timeout: 600,
-
-      model: "GigaChat-3-Ultra",
-
-      credentials: GIGACHAT_KEY,
-
-      scope: "GIGACHAT_API_PERS",
-
-      baseUrl: "https://api.giga.chat/api/v1",
-
-      httpsAgent: httpsAgent
-
-    });
+  timeout: 600,
+  model: "GigaChat-3-Ultra",
+  credentials: GIGACHAT_KEY,
+  scope: "GIGACHAT_API_PERS",
+  baseUrl: "https://api.giga.chat/api/v1",
+  httpsAgent: httpsAgent,
+  headers: {
+    "User-Agent": "Content-Constructor-Gateway/1.0"
+  }
+});
 
 
     // --------------------------------------------------------
