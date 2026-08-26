@@ -92,15 +92,15 @@ app.post("/generate", async (req, res) => {
     // 2. Получаем данные от Salebot
     // --------------------------------------------------------
 
-    const {
-      bridge_key,
-      content_type,
-      business_info,
-      target_audience,
-      content_goal,
-      reels_topic,
-      content_style
-    } = req.body;
+    const body = req.body || {};
+
+const bridge_key = body.bridge_key;
+const content_type = body.content_type;
+const business_info = body.business_info;
+const target_audience = body.target_audience;
+const content_goal = body.content_goal;
+const reels_topic = body.reels_topic;
+const content_style = body.content_style;
 
 
     // --------------------------------------------------------
