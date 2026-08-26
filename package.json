@@ -7,10 +7,10 @@
     "start": "node index.js"
   },
   "engines": {
-    "node": ">=20 <26"
+    "node": ">=18"
   },
   "dependencies": {
     "express": "^5.1.0",
-    "gigachat": "^0.1.4"
+    "gigachat": "^0.0.20"
   }
 }
