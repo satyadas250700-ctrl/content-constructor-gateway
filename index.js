@@ -1,6 +1,6 @@
     const express = require("express");
 const { Agent } = require("node:https");
-const GigaChat = require("gigachat");
+const { GigaChat } = require("gigachat");
 
 const app = express();
 
