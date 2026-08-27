@@ -24,79 +24,22 @@ const httpsAgent = new https.Agent({
 // STARTUP
 // ============================================================
 
-if (!GIGACHAT_KEY) {
-  console.error("ERROR: GIGACHAT_KEY is not configured");
-}
+console.log("======================================");
+console.log("CONTENT CONSTRUCTOR GATEWAY");
+console.log("======================================");
 
-if (!BRIDGE_KEY) {
-  console.error("ERROR: BRIDGE_KEY is not configured");
-}
+console.log(
+  "GIGACHAT_KEY:",
+  GIGACHAT_KEY ? "configured" : "NOT CONFIGURED"
+);
 
-console.log("GigaChat Gateway starting...");
-
-// ============================================================
-// UNIVERSAL HTTPS REQUEST
-// ============================================================
-
-function httpsRequest(options, body = null) {
-
-  return new Promise((resolve, reject) => {
-
-    const req = https.request(
-      options,
-      (res) => {
-
-        let data = "";
-
-        res.on("data", (chunk) => {
-          data += chunk.toString();
-        });
-
-        res.on("end", () => {
-
-          let parsed = data;
-
-          try {
-            parsed = JSON.parse(data);
-          } catch (_) {
-            // Ответ не JSON — оставляем как текст
-          }
-
-          resolve({
-            statusCode: res.statusCode,
-            headers: res.headers,
-            data: parsed
-          });
-
-        });
-
-      }
-    );
-
-    req.on("error", (error) => {
-      reject(error);
-    });
-
-    req.setTimeout(12000, () => {
-
-      req.destroy(
-        new Error("HTTPS request timeout")
-      );
-
-    });
-
-    if (body) {
-      req.write(body);
-    }
-
-    req.end();
-
-  });
-
-}
+console.log(
+  "BRIDGE_KEY:",
+  BRIDGE_KEY ? "configured" : "NOT CONFIGURED"
+);
 
 // ============================================================
-// GET /
+// ROOT
 // ============================================================
 
 app.get("/", (req, res) => {
@@ -110,250 +53,126 @@ app.get("/", (req, res) => {
 });
 
 // ============================================================
-// TEST AUTH
+// SIMPLE TEST
 // ============================================================
 //
-// Этот endpoint проверяет ТОЛЬКО:
-//
-// Authorization Key
-//        ↓
-// OAuth
-//        ↓
-// access_token
-//
-// Он НЕ запускает генерацию контента.
-//
-// После проверки endpoint можно удалить.
+// Пока здесь НЕТ GigaChat.
+// Проверяем только работу маршрута.
 // ============================================================
 
-app.get("/test-auth", async (req, res) => {
+app.get("/test-auth", (req, res) => {
 
   console.log("======================================");
-  console.log("=== TEST AUTH STARTED ===");
+  console.log("TEST-AUTH ROUTE REACHED");
   console.log("======================================");
 
-  try {
+  return res.json({
 
-    // --------------------------------------------------------
-    // 1. Проверяем наличие ключа
-    // --------------------------------------------------------
+    ok: true,
 
-    if (!GIGACHAT_KEY) {
+    test_auth:
+      "working",
 
-      return res.status(500).json({
+    message:
+      "The /test-auth route is working correctly."
 
-        ok: false,
-
-        stage: "configuration",
-
-        error:
-          "GIGACHAT_KEY is not configured"
-
-      });
-
-    }
-
-    console.log(
-      "GIGACHAT_KEY: configured"
-    );
-
-    // --------------------------------------------------------
-    // 2. Генерируем UUID
-    // --------------------------------------------------------
-
-    const rqUID = crypto.randomUUID();
-
-    console.log(
-      "RqUID generated"
-    );
-
-    // --------------------------------------------------------
-    // 3. Формируем OAuth body
-    // --------------------------------------------------------
-
-    const oauthBody =
-      "scope=" +
-      encodeURIComponent(
-        "GIGACHAT_API_PERS"
-      );
-
-    // --------------------------------------------------------
-    // 4. Отправляем запрос OAuth
-    // --------------------------------------------------------
-
-    console.log(
-      "Sending OAuth request to GigaChat..."
-    );
-
-    const response = await httpsRequest({
-
-      hostname:
-        "ngw.devices.sberbank.ru",
-
-      port: 9443,
-
-      path:
-        "/api/v2/oauth",
-
-      method:
-        "POST",
-
-      agent:
-        httpsAgent,
-
-      headers: {
-
-        "Content-Type":
-          "application/x-www-form-urlencoded",
-
-        "Accept":
-          "application/json",
-
-        "RqUID":
-          rqUID,
-
-        "Authorization":
-          "Basic " + GIGACHAT_KEY,
-
-        "Content-Length":
-          Buffer.byteLength(oauthBody)
-
-      }
-
-    }, oauthBody);
-
-    // --------------------------------------------------------
-    // 5. Логируем ТОЛЬКО безопасную информацию
-    // --------------------------------------------------------
-
-    console.log(
-      "OAuth HTTP status:",
-      response.statusCode
-    );
-
-    // --------------------------------------------------------
-    // 6. Проверяем ответ
-    // --------------------------------------------------------
-
-    if (
-      response.statusCode < 200 ||
-      response.statusCode >= 300
-    ) {
-
-      console.error(
-        "OAuth FAILED"
-      );
-
-      console.error(
-        "OAuth response:",
-        response.data
-      );
-
-      return res.status(500).json({
-
-        ok: false,
-
-        stage: "oauth",
-
-        status:
-          response.statusCode,
-
-        error:
-          response.data
-
-      });
-
-    }
-
-    // --------------------------------------------------------
-    // 7. Извлекаем access token
-    // --------------------------------------------------------
-
-    const accessToken =
-      response.data &&
-      response.data.access_token;
-
-    if (!accessToken) {
-
-      console.error(
-        "OAuth returned no access_token"
-      );
-
-      return res.status(500).json({
-
-        ok: false,
-
-        stage: "oauth",
-
-        error:
-          "OAuth response does not contain access_token",
-
-        response:
-          response.data
-
-      });
-
-    }
-
-    // --------------------------------------------------------
-    // 8. НЕ ВЫВОДИМ ТОКЕН В ЛОГИ
-    // --------------------------------------------------------
-
-    console.log(
-      "OAuth SUCCESS"
-    );
-
-    console.log(
-      "Access token received: YES"
-    );
-
-    // --------------------------------------------------------
-    // 9. Возвращаем безопасный результат
-    // --------------------------------------------------------
-
-    return res.json({
-
-      ok: true,
-
-      stage: "oauth",
-
-      token_received: true,
-
-      message:
-        "GigaChat Authorization Key works correctly"
-
-    });
-
-  } catch (error) {
-
-    console.error(
-      "OAuth request error:",
-      error.message
-    );
-
-    return res.status(500).json({
-
-      ok: false,
-
-      stage: "oauth_connection",
-
-      error:
-        error.message
-
-    });
-
-  }
+  });
 
 });
 
 // ============================================================
-// GET TOKEN FUNCTION
-// ============================================================
-//
-// Используется основным /generate.
+// HTTPS REQUEST
 // ============================================================
 
-async function getAccessToken() {
+function httpsRequest(options, body = null) {
+
+  return new Promise((resolve, reject) => {
+
+    const request = https.request(
+      options,
+      (response) => {
+
+        let data = "";
+
+        response.on("data", (chunk) => {
+
+          data += chunk.toString();
+
+        });
+
+        response.on("end", () => {
+
+          let parsed = data;
+
+          try {
+
+            parsed = JSON.parse(data);
+
+          } catch (error) {
+
+            // Ответ не JSON
+            // Оставляем как текст
+
+          }
+
+          resolve({
+
+            statusCode:
+              response.statusCode,
+
+            headers:
+              response.headers,
+
+            data:
+              parsed
+
+          });
+
+        });
+
+      }
+    );
+
+    request.on("error", (error) => {
+
+      reject(error);
+
+    });
+
+    request.setTimeout(
+      15000,
+      () => {
+
+        request.destroy(
+          new Error(
+            "HTTPS request timeout"
+          )
+        );
+
+      }
+    );
+
+    if (body) {
+
+      request.write(body);
+
+    }
+
+    request.end();
+
+  });
+
+}
+
+// ============================================================
+// OAUTH TEST
+// ============================================================
+//
+// После того как простой /test-auth подтвердит,
+// что маршрут работает, сюда добавим реальную проверку.
+// ============================================================
+
+async function testGigaChatAuth() {
 
   if (!GIGACHAT_KEY) {
 
@@ -366,49 +185,66 @@ async function getAccessToken() {
   const rqUID =
     crypto.randomUUID();
 
-  const oauthBody =
+  const body =
     "scope=" +
     encodeURIComponent(
       "GIGACHAT_API_PERS"
     );
 
+  console.log(
+    "Sending OAuth request..."
+  );
+
   const response =
-    await httpsRequest({
+    await httpsRequest(
 
-      hostname:
-        "ngw.devices.sberbank.ru",
+      {
 
-      port: 9443,
+        hostname:
+          "ngw.devices.sberbank.ru",
 
-      path:
-        "/api/v2/oauth",
+        port:
+          9443,
 
-      method:
-        "POST",
+        path:
+          "/api/v2/oauth",
 
-      agent:
-        httpsAgent,
+        method:
+          "POST",
 
-      headers: {
+        agent:
+          httpsAgent,
 
-        "Content-Type":
-          "application/x-www-form-urlencoded",
+        headers: {
 
-        "Accept":
-          "application/json",
+          "Content-Type":
+            "application/x-www-form-urlencoded",
 
-        "RqUID":
-          rqUID,
+          "Accept":
+            "application/json",
 
-        "Authorization":
-          "Basic " + GIGACHAT_KEY,
+          "RqUID":
+            rqUID,
 
-        "Content-Length":
-          Buffer.byteLength(oauthBody)
+          "Authorization":
+            "Basic " +
+            GIGACHAT_KEY,
 
-      }
+          "Content-Length":
+            Buffer.byteLength(body)
 
-    }, oauthBody);
+        }
+
+      },
+
+      body
+
+    );
+
+  console.log(
+    "OAuth status:",
+    response.statusCode
+  );
 
   if (
     response.statusCode < 200 ||
@@ -416,31 +252,87 @@ async function getAccessToken() {
   ) {
 
     throw new Error(
+
       "OAuth HTTP " +
       response.statusCode +
       ": " +
       JSON.stringify(
         response.data
       )
+
     );
 
   }
 
-  const token =
+  const accessToken =
     response.data &&
     response.data.access_token;
 
-  if (!token) {
+  if (!accessToken) {
 
     throw new Error(
-      "OAuth response does not contain access_token"
+      "OAuth response has no access_token"
     );
 
   }
 
-  return token;
+  return accessToken;
 
 }
+
+// ============================================================
+// REAL OAUTH TEST
+// ============================================================
+//
+// Пока он находится отдельно.
+// ============================================================
+
+app.get("/test-gigachat-auth", async (req, res) => {
+
+  console.log("======================================");
+  console.log("GIGACHAT AUTH TEST STARTED");
+  console.log("======================================");
+
+  try {
+
+    const token =
+      await testGigaChatAuth();
+
+    return res.json({
+
+      ok: true,
+
+      stage: "oauth",
+
+      token_received:
+        !!token,
+
+      message:
+        "GigaChat OAuth authentication works."
+
+    });
+
+  } catch (error) {
+
+    console.error(
+      "GigaChat OAuth error:",
+      error.message
+    );
+
+    return res.status(500).json({
+
+      ok: false,
+
+      stage: "oauth",
+
+      error:
+        error.message
+
+    });
+
+  }
+
+});
 
 // ============================================================
 // GENERATE
@@ -449,14 +341,14 @@ async function getAccessToken() {
 app.post("/generate", async (req, res) => {
 
   console.log("======================================");
-  console.log("=== GENERATE REQUEST RECEIVED ===");
+  console.log("GENERATE REQUEST RECEIVED");
   console.log("======================================");
 
   try {
 
-    // ========================================================
-    // 1. CONFIG
-    // ========================================================
+    // --------------------------------------------------------
+    // CONFIG
+    // --------------------------------------------------------
 
     if (!GIGACHAT_KEY) {
 
@@ -464,7 +356,8 @@ app.post("/generate", async (req, res) => {
 
         ok: false,
 
-        stage: "configuration",
+        stage:
+          "configuration",
 
         error:
           "GIGACHAT_KEY is not configured"
@@ -479,7 +372,8 @@ app.post("/generate", async (req, res) => {
 
         ok: false,
 
-        stage: "configuration",
+        stage:
+          "configuration",
 
         error:
           "BRIDGE_KEY is not configured"
@@ -488,12 +382,26 @@ app.post("/generate", async (req, res) => {
 
     }
 
-    // ========================================================
-    // 2. SALEBOT DATA
-    // ========================================================
+    // --------------------------------------------------------
+    // SALEBOT BODY
+    // --------------------------------------------------------
 
     const body =
       req.body || {};
+
+    console.log(
+      "Body received:",
+      !!req.body
+    );
+
+    console.log(
+      "Body keys:",
+      Object.keys(body)
+    );
+
+    // --------------------------------------------------------
+    // DATA
+    // --------------------------------------------------------
 
     const bridge_key =
       body.bridge_key;
@@ -516,51 +424,21 @@ app.post("/generate", async (req, res) => {
     const content_style =
       body.content_style || "";
 
-    console.log(
-      "Content type:",
-      content_type
-    );
+    // --------------------------------------------------------
+    // SECURITY
+    // --------------------------------------------------------
 
-    console.log(
-      "Business info:",
-      business_info ? "YES" : "NO"
-    );
-
-    console.log(
-      "Target audience:",
-      target_audience ? "YES" : "NO"
-    );
-
-    console.log(
-      "Content goal:",
-      content_goal ? "YES" : "NO"
-    );
-
-    console.log(
-      "Topic:",
-      reels_topic ? "YES" : "NO"
-    );
-
-    console.log(
-      "Style:",
-      content_style ? "YES" : "NO"
-    );
-
-    // ========================================================
-    // 3. SECURITY
-    // ========================================================
-
-    if (bridge_key !== BRIDGE_KEY) {
-
-      console.error(
-        "Invalid bridge_key"
-      );
+    if (
+      bridge_key !==
+      BRIDGE_KEY
+    ) {
 
       return res.status(401).json({
 
         ok: false,
 
-        stage: "security",
+        stage:
+          "security",
 
         error:
           "Invalid bridge_key"
@@ -569,81 +447,24 @@ app.post("/generate", async (req, res) => {
 
     }
 
-    // ========================================================
-    // 4. CHECK UNRESOLVED SALEBOT VARIABLES
-    // ========================================================
-
-    const variables = {
-
-      content_type,
-      business_info,
-      target_audience,
-      content_goal,
-      reels_topic,
-      content_style
-
-    };
-
-    const unresolved =
-      Object.entries(
-        variables
-      )
-      .filter(([key, value]) => {
-
-        return (
-          String(value)
-            .trim()
-            .startsWith("{{") &&
-          String(value)
-            .trim()
-            .endsWith("}}")
-        );
-
-      })
-      .map(([key]) => key);
-
-    if (unresolved.length > 0) {
-
-      console.error(
-        "Unresolved variables:",
-        unresolved
-      );
-
-      return res.status(400).json({
-
-        ok: false,
-
-        stage:
-          "salebot_variables",
-
-        error:
-          "Salebot did not substitute variables",
-
-        variables:
-          unresolved
-
-      });
-
-    }
-
-    // ========================================================
-    // 5. GET FRESH ACCESS TOKEN
-    // ========================================================
+    // --------------------------------------------------------
+    // TOKEN
+    // --------------------------------------------------------
 
     console.log(
       "Getting GigaChat access token..."
     );
 
     const accessToken =
-      await getAccessToken();
+      await testGigaChatAuth();
 
     console.log(
-      "Access token received"
+      "Access token received."
     );
 
-    // ========================================================
-    // 6. PROMPT
-    // ========================================================
+    // --------------------------------------------------------
+    // PROMPT
+    // --------------------------------------------------------
 
     const prompt = `
 
@@ -706,16 +527,16 @@ ${content_style}
 Создай полноценный сценарий Reels:
 
 ЗАЦЕПКА:
-Сильная первая фраза, которая удерживает внимание.
+...
 
 СЦЕНАРИЙ:
-Полный сценарий по шагам.
+...
 
 ФИНАЛ:
-Сильное завершение.
+...
 
 CTA:
-Призыв к действию.
+...
 
 
 ==============================
@@ -739,25 +560,18 @@ CTA.
 ЕСЛИ ВЫБРАНА КАРУСЕЛЬ
 ==============================
 
-Создай полноценную структуру карусели.
+Создай структуру:
 
 Слайд 1:
-Заголовок и сильный хук.
+...
 
 Слайд 2:
-Основная мысль.
+...
 
 Слайд 3:
-Развитие темы.
+...
 
-Слайд 4:
-Практическая ценность.
-
-Слайд 5:
-Вывод.
-
-Добавляй дополнительные слайды,
-если это необходимо.
+и далее.
 
 
 ==============================
@@ -769,14 +583,13 @@ CTA.
 
 Не добавляй пояснений вне готового контента.
 
-==============================
-
 Верни только готовый контент.
+
 `;
 
-    // ========================================================
-    // 7. CHAT COMPLETIONS
-    // ========================================================
+    // --------------------------------------------------------
+    // GIGACHAT REQUEST
+    // --------------------------------------------------------
 
     const requestBody =
       JSON.stringify({
@@ -787,17 +600,23 @@ CTA.
         messages: [
 
           {
-            role: "system",
+
+            role:
+              "system",
 
             content:
               "Ты профессиональный контент-маркетолог, контент-стратег и сценарист. Отвечай на русском языке."
+
           },
 
           {
-            role: "user",
+
+            role:
+              "user",
 
             content:
               prompt
+
           }
 
         ],
@@ -815,52 +634,58 @@ CTA.
     );
 
     const response =
-      await httpsRequest({
+      await httpsRequest(
 
-        hostname:
-          "api.giga.chat",
+        {
 
-        port:
-          443,
+          hostname:
+            "api.giga.chat",
 
-        path:
-          "/v1/chat/completions",
+          port:
+            443,
 
-        method:
-          "POST",
+          path:
+            "/v1/chat/completions",
 
-        agent:
-          httpsAgent,
+          method:
+            "POST",
 
-        headers: {
+          agent:
+            httpsAgent,
 
-          "Content-Type":
-            "application/json",
+          headers: {
 
-          "Accept":
-            "application/json",
+            "Content-Type":
+              "application/json",
 
-          "Authorization":
-            "Bearer " +
-            accessToken,
+            "Accept":
+              "application/json",
 
-          "Content-Length":
-            Buffer.byteLength(
-              requestBody
-            )
+            "Authorization":
+              "Bearer " +
+              accessToken,
 
-        }
+            "Content-Length":
+              Buffer.byteLength(
+                requestBody
+              )
 
-      }, requestBody);
+          }
 
-    // ========================================================
-    // 8. CHECK GIGACHAT RESPONSE
-    // ========================================================
+        },
+
+        requestBody
+
+      );
 
     console.log(
-      "GigaChat HTTP status:",
+      "GigaChat status:",
       response.statusCode
     );
+
+    // --------------------------------------------------------
+    // ERROR
+    // --------------------------------------------------------
 
     if (
       response.statusCode < 200 ||
@@ -868,7 +693,7 @@ CTA.
     ) {
 
       console.error(
-        "GigaChat error response:",
+        "GigaChat response:",
         response.data
       );
 
@@ -889,9 +714,9 @@ CTA.
 
     }
 
-    // ========================================================
-    // 9. EXTRACT RESULT
-    // ========================================================
+    // --------------------------------------------------------
+    // RESULT
+    // --------------------------------------------------------
 
     const result =
       response.data &&
@@ -901,10 +726,6 @@ CTA.
       response.data.choices[0].message.content;
 
     if (!result) {
-
-      console.error(
-        "No message.content in GigaChat response"
-      );
 
       return res.status(502).json({
 
@@ -923,17 +744,8 @@ CTA.
 
     }
 
-    // ========================================================
-    // 10. SUCCESS
-    // ========================================================
-
     console.log(
-      "Generation successful"
-    );
-
-    console.log(
-      "Result length:",
-      String(result).length
+      "Generation successful."
     );
 
     return res.json({
@@ -949,19 +761,8 @@ CTA.
   } catch (error) {
 
     console.error(
-      "======================================"
-    );
-
-    console.error(
-      "GIGACHAT ERROR"
-    );
-
-    console.error(
-      "======================================"
-    );
-
-    console.error(
-      error.message || error
+      "Generate error:",
+      error.message
     );
 
     return res.status(500).json({
@@ -973,10 +774,7 @@ CTA.
         "gigachat",
 
       error:
-        String(
-          error.message ||
-          error
-        )
+        error.message
 
     });
 
@@ -1000,4 +798,4 @@ app.listen(
   }
 );
 ```
-    
+  
