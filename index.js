@@ -60,7 +60,9 @@ app.get("/", (req, res) => {
 // ============================================================
 
 app.post("/generate", async (req, res) => {
-
+console.log("=== GENERATE REQUEST RECEIVED ===");
+console.log("Content-Type:", req.headers["content-type"]);
+console.log("Body:", req.body ? "EXISTS" : "EMPTY");
   try {
       
 console.log("=== SALEBOT REQUEST RECEIVED ===");
