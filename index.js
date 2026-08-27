@@ -255,7 +255,7 @@ app.post("/generate", async (req, res) => {
       timeout: 12,
 
       baseUrl:
-        "https://api.giga.chat/api/v1",
+        "https://api.giga.chat/v1",
 
       httpsAgent: httpsAgent,
 
