@@ -1,6 +1,7 @@
-    const express = require("express");
+    ```javascript
+const express = require("express");
 const { Agent } = require("node:https");
-const { GigaChat } = require("gigachat");
+const GigaChat = require("gigachat");
 
 const app = express();
 
@@ -8,27 +9,23 @@ app.use(express.json({ limit: "1mb" }));
 
 const PORT = process.env.PORT || 10000;
 
+// ============================================================
+// ENV
+// ============================================================
+
 const GIGACHAT_KEY = process.env.GIGACHAT_KEY;
 const BRIDGE_KEY = process.env.BRIDGE_KEY;
 
-
 // ============================================================
 // HTTPS AGENT
-// ============================================================
-//
-// GigaChat использует сертификат НУЦ Минцифры.
-// Временно отключаем проверку сертификата.
-//
-// Это соответствует официальному примеру JS SDK GigaChat.
 // ============================================================
 
 const httpsAgent = new Agent({
   rejectUnauthorized: false
 });
 
-
 // ============================================================
-// ПРОВЕРКА НАСТРОЕК
+// STARTUP CHECK
 // ============================================================
 
 if (!GIGACHAT_KEY) {
@@ -39,40 +36,60 @@ if (!BRIDGE_KEY) {
   console.error("ERROR: BRIDGE_KEY is not configured");
 }
 
-
 // ============================================================
-// ПРОВЕРКА РАБОТЫ ШЛЮЗА
+// HEALTH CHECK
 // ============================================================
 
 app.get("/", (req, res) => {
-
   res.json({
     ok: true,
     service: "Content Constructor Gateway",
     status: "working"
   });
-
 });
 
+// ============================================================
+// HELPER
+// ============================================================
+
+function getValue(value) {
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  return String(value).trim();
+}
 
 // ============================================================
-// ОСНОВНОЙ ENDPOINT ДЛЯ SALEBOT
+// GENERATE
 // ============================================================
 
 app.post("/generate", async (req, res) => {
-console.log("=== GENERATE REQUEST RECEIVED ===");
-console.log("Content-Type:", req.headers["content-type"]);
-console.log("Body:", req.body ? "EXISTS" : "EMPTY");
-  try {
-      
-console.log("=== SALEBOT REQUEST RECEIVED ===");
-console.log("Content-Type:", req.headers["content-type"]);
-console.log("Body exists:", !!req.body);
-console.log("Body keys:", req.body ? Object.keys(req.body) : []);
 
-    // --------------------------------------------------------
-    // 1. Проверяем секреты
-    // --------------------------------------------------------
+  console.log("======================================");
+  console.log("=== GENERATE REQUEST RECEIVED ===");
+  console.log("======================================");
+
+  console.log(
+    "Content-Type:",
+    req.headers["content-type"]
+  );
+
+  console.log(
+    "Body exists:",
+    !!req.body
+  );
+
+  console.log(
+    "Body keys:",
+    req.body ? Object.keys(req.body) : []
+  );
+
+  try {
+
+    // ========================================================
+    // 1. CHECK CONFIGURATION
+    // ========================================================
 
     if (!GIGACHAT_KEY) {
 
@@ -94,27 +111,73 @@ console.log("Body keys:", req.body ? Object.keys(req.body) : []);
 
     }
 
-
-    // --------------------------------------------------------
-    // 2. Получаем данные от Salebot
-    // --------------------------------------------------------
+    // ========================================================
+    // 2. GET SALEBOT DATA
+    // ========================================================
 
     const body = req.body || {};
 
-const bridge_key = body.bridge_key;
-const content_type = body.content_type;
-const business_info = body.business_info;
-const target_audience = body.target_audience;
-const content_goal = body.content_goal;
-const reels_topic = body.reels_topic;
-const content_style = body.content_style;
+    const bridge_key = getValue(body.bridge_key);
 
+    const content_type = getValue(body.content_type);
 
-    // --------------------------------------------------------
-    // 3. Проверяем bridge_key
-    // --------------------------------------------------------
+    const business_info = getValue(body.business_info);
+
+    const target_audience = getValue(
+      body.target_audience
+    );
+
+    const content_goal = getValue(
+      body.content_goal
+    );
+
+    const reels_topic = getValue(
+      body.reels_topic
+    );
+
+    const content_style = getValue(
+      body.content_style
+    );
+
+    console.log(
+      "Content type received:",
+      content_type
+    );
+
+    console.log(
+      "Business info received:",
+      business_info ? "YES" : "NO"
+    );
+
+    console.log(
+      "Target audience received:",
+      target_audience ? "YES" : "NO"
+    );
+
+    console.log(
+      "Content goal received:",
+      content_goal ? "YES" : "NO"
+    );
+
+    console.log(
+      "Topic received:",
+      reels_topic ? "YES" : "NO"
+    );
+
+    console.log(
+      "Style received:",
+      content_style ? "YES" : "NO"
+    );
+
+    // ========================================================
+    // 3. CHECK BRIDGE KEY
+    // ========================================================
 
     if (bridge_key !== BRIDGE_KEY) {
+
+      console.error(
+        "SECURITY ERROR: Invalid bridge_key"
+      );
 
       return res.status(401).json({
         ok: false,
@@ -124,30 +187,93 @@ const content_style = body.content_style;
 
     }
 
+    console.log("Bridge key: OK");
 
-    // --------------------------------------------------------
-    // 4. Создаём клиента GigaChat
-    // --------------------------------------------------------
+    // ========================================================
+    // 4. CHECK SALEBOT VARIABLES
+    // ========================================================
+    //
+    // Если Salebot отправляет буквально:
+    // {{content_type}}
+    //
+    // значит переменная не была подставлена в Salebot.
+    // Не отправляем такой мусор в GigaChat.
+    //
+
+    const variables = {
+      content_type,
+      business_info,
+      target_audience,
+      content_goal,
+      reels_topic,
+      content_style
+    };
+
+    const unresolvedVariables = Object.entries(
+      variables
+    )
+      .filter(([key, value]) => {
+        return (
+          value.startsWith("{{") &&
+          value.endsWith("}}")
+        );
+      })
+      .map(([key]) => key);
+
+    if (unresolvedVariables.length > 0) {
+
+      console.error(
+        "UNRESOLVED SALEBOT VARIABLES:",
+        unresolvedVariables
+      );
+
+      return res.status(400).json({
+        ok: false,
+        stage: "salebot_variables",
+        error:
+          "Salebot did not substitute variables",
+        variables: unresolvedVariables
+      });
+
+    }
+
+    // ========================================================
+    // 5. CREATE GIGACHAT CLIENT
+    // ========================================================
+
+    console.log(
+      "Creating GigaChat client..."
+    );
 
     const giga = new GigaChat({
-  timeout: 600,
-  model: "GigaChat-3-Ultra",
-  credentials: GIGACHAT_KEY,
-  scope: "GIGACHAT_API_PERS",
-  baseUrl: "https://api.giga.chat/api/v1",
-  httpsAgent: httpsAgent,
-  headers: {
-    "User-Agent": "Content-Constructor-Gateway/1.0"
-  }
-});
+      credentials: GIGACHAT_KEY,
 
+      scope: "GIGACHAT_API_PERS",
 
-    // --------------------------------------------------------
-    // 5. Формируем промпт
-    // --------------------------------------------------------
+      model: "GigaChat-3-Ultra",
+
+      timeout: 12,
+
+      baseUrl:
+        "https://api.giga.chat/api/v1",
+
+      httpsAgent: httpsAgent,
+
+      headers: {
+        "User-Agent":
+          "Content-Constructor-Gateway/1.0"
+      }
+    });
+
+    console.log(
+      "GigaChat client created"
+    );
+
+    // ========================================================
+    // 6. PROMPT
+    // ========================================================
 
     const prompt = `
-
 Ты — профессиональный контент-маркетолог,
 контент-стратег и сценарист.
 
@@ -162,22 +288,22 @@ const content_style = body.content_style;
 ==============================
 
 ТИП КОНТЕНТА:
-${content_type || ""}
+${content_type}
 
 БИЗНЕС:
-${business_info || ""}
+${business_info}
 
 ЦЕЛЕВАЯ АУДИТОРИЯ:
-${target_audience || ""}
+${target_audience}
 
 ЦЕЛЬ КОНТЕНТА:
-${content_goal || ""}
+${content_goal}
 
 ТЕМА:
-${reels_topic || ""}
+${reels_topic}
 
 СТИЛЬ:
-${content_style || ""}
+${content_style}
 
 
 ==============================
@@ -204,26 +330,26 @@ ${content_style || ""}
 ЕСЛИ ВЫБРАН REELS
 ==============================
 
-Создай полноценный сценарий Reels:
+Создай полноценный сценарий Reels.
 
 ЗАЦЕПКА:
-...
+Сильная первая фраза, которая удерживает внимание.
 
 СЦЕНАРИЙ:
-...
+Полный сценарий по шагам.
 
 ФИНАЛ:
-...
+Сильное завершение.
 
 CTA:
-...
+Призыв к действию.
 
 
 ==============================
 ЕСЛИ ВЫБРАН ПОСТ
 ==============================
 
-Создай полноценный пост:
+Создай полноценный пост.
 
 Сильное начало.
 
@@ -240,18 +366,25 @@ CTA.
 ЕСЛИ ВЫБРАНА КАРУСЕЛЬ
 ==============================
 
-Создай структуру:
+Создай полноценную структуру карусели.
 
 Слайд 1:
-...
+Заголовок и сильный хук.
 
 Слайд 2:
-...
+Основная мысль.
 
 Слайд 3:
-...
+Развитие темы.
 
-и так далее.
+Слайд 4:
+Практическая ценность.
+
+Слайд 5:
+Вывод.
+
+Добавляй дополнительные слайды,
+если это необходимо для качества.
 
 
 ==============================
@@ -263,12 +396,22 @@ CTA.
 
 Не добавляй пояснений вне готового контента.
 
+==============================
+
+Верни только готовый контент.
 `;
 
+    console.log(
+      "Prompt prepared"
+    );
 
-    // --------------------------------------------------------
-    // 6. Отправляем запрос в GigaChat
-    // --------------------------------------------------------
+    // ========================================================
+    // 7. GIGACHAT REQUEST
+    // ========================================================
+
+    console.log(
+      "Sending request to GigaChat..."
+    );
 
     const response = await giga.chat({
 
@@ -276,12 +419,14 @@ CTA.
 
         {
           role: "system",
+
           content:
             "Ты профессиональный контент-маркетолог, контент-стратег и сценарист. Отвечай на русском языке."
         },
 
         {
           role: "user",
+
           content: prompt
         }
 
@@ -291,10 +436,13 @@ CTA.
 
     });
 
+    console.log(
+      "GigaChat response received"
+    );
 
-    // --------------------------------------------------------
-    // 7. Получаем готовый текст
-    // --------------------------------------------------------
+    // ========================================================
+    // 8. GET RESULT
+    // ========================================================
 
     const result =
       response &&
@@ -303,12 +451,15 @@ CTA.
       response.choices[0].message &&
       response.choices[0].message.content;
 
-
-    // --------------------------------------------------------
-    // 8. Проверяем результат
-    // --------------------------------------------------------
+    // ========================================================
+    // 9. CHECK RESULT
+    // ========================================================
 
     if (!result) {
+
+      console.error(
+        "GigaChat returned empty result"
+      );
 
       return res.status(502).json({
 
@@ -317,18 +468,24 @@ CTA.
         stage: "generation",
 
         error:
-          "GigaChat response does not contain message.content",
-
-        response: response
+          "GigaChat response does not contain message.content"
 
       });
 
     }
 
+    console.log(
+      "Generated content length:",
+      String(result).length
+    );
 
-    // --------------------------------------------------------
-    // 9. Возвращаем результат в Salebot
-    // --------------------------------------------------------
+    // ========================================================
+    // 10. RETURN TO SALEBOT
+    // ========================================================
+
+    console.log(
+      "Returning result to Salebot"
+    );
 
     return res.json({
 
@@ -338,10 +495,38 @@ CTA.
 
     });
 
-
   } catch (error) {
 
-    console.error("GigaChat error:", error);
+    console.error(
+      "======================================"
+    );
+
+    console.error(
+      "GIGACHAT ERROR"
+    );
+
+    console.error(
+      "======================================"
+    );
+
+    console.error(
+      "Message:",
+      error.message || error
+    );
+
+    if (error.response) {
+
+      console.error(
+        "HTTP status:",
+        error.response.status
+      );
+
+      console.error(
+        "Response data:",
+        error.response.data
+      );
+
+    }
 
     return res.status(500).json({
 
@@ -350,7 +535,9 @@ CTA.
       stage: "gigachat",
 
       error:
-        String(error.message || error)
+        String(
+          error.message || error
+        )
 
     });
 
@@ -358,15 +545,19 @@ CTA.
 
 });
 
-
 // ============================================================
-// ЗАПУСК
+// START SERVER
 // ============================================================
 
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
 
-  console.log(
-    `Content Constructor Gateway running on port ${PORT}`
-  );
+    console.log(
+      `Content Constructor Gateway running on port ${PORT}`
+    );
 
-});
+  }
+);
+```
