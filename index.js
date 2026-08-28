@@ -1,5 +1,5 @@
 const express = require("express");
-const GigaChat = require("gigachat");
+const GigaChat = require("gigachat").default;
 
 const app = express();
 
