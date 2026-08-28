@@ -472,26 +472,52 @@ CTA.
 
   } catch (error) {
 
-    console.error("====================================");
-    console.error("GIGACHAT ERROR");
-    console.error("====================================");
+  console.error("====================================");
+  console.error("GIGACHAT ERROR");
+  console.error("====================================");
 
-    console.error(error);
+  console.error("ERROR TYPE:", typeof error);
+  console.error("ERROR:", error);
 
-    return res.status(500).json({
-
-      ok: false,
-
-      stage: "gigachat",
-
-      error:
-        String(error.message || error)
-
-    });
-
+  if (error && error.response) {
+    console.error("RESPONSE STATUS:", error.response.status);
+    console.error("RESPONSE DATA:", error.response.data);
+    console.error("RESPONSE HEADERS:", error.response.headers);
   }
 
-});
+  let errorMessage = "Unknown error";
+
+  if (error instanceof Error) {
+    errorMessage = error.message;
+  } 
+  else if (typeof error === "string") {
+    errorMessage = error;
+  } 
+  else if (error && typeof error === "object") {
+
+    try {
+      errorMessage = JSON.stringify(error, null, 2);
+    } catch (jsonError) {
+      errorMessage = String(error);
+    }
+
+  } 
+  else {
+    errorMessage = String(error);
+  }
+
+
+  return res.status(500).json({
+
+    ok: false,
+
+    stage: "gigachat",
+
+    error: errorMessage
+
+  });
+
+  }
 
 
 // ============================================================
