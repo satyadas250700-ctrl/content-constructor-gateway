@@ -1,13 +1,11 @@
 const express = require("express");
-const https = require("https");
 const axios = require("axios");
+const https = require("https");
+const crypto = require("crypto");
 
 const app = express();
 
-
-// ============================================================
-// НАСТРОЙКИ
-// ============================================================
+app.use(express.json({ limit: "1mb" }));
 
 const PORT = process.env.PORT || 10000;
 
@@ -25,10 +23,12 @@ const GIGACHAT_MODEL =
 // HTTPS AGENT
 // ============================================================
 //
-// Для работы с сертификатами GigaChat.
-// Проверка сертификата отключена, как в нашем
-// предыдущем рабочем варианте.
+// GigaChat может использовать сертификаты НУЦ Минцифры.
+// Для текущего тестового проекта отключаем проверку TLS.
 //
+// ВАЖНО:
+// Это сделано для совместимости с GigaChat.
+// ============================================================
 
 const httpsAgent = new https.Agent({
   rejectUnauthorized: false
@@ -36,56 +36,21 @@ const httpsAgent = new https.Agent({
 
 
 // ============================================================
-// EXPRESS
+// AXIOS CLIENT
 // ============================================================
 
-app.use(express.json({
-  limit: "1mb"
-}));
+const http = axios.create({
+  httpsAgent: httpsAgent,
 
+  // Для GigaChat даём достаточно времени.
+  timeout: 600000,
 
-// ============================================================
-// ГЛОБАЛЬНОЕ ЛОГИРОВАНИЕ
-// ============================================================
-//
-// ЭТОТ БЛОК СЕЙЧАС ОСОБЕННО ВАЖЕН.
-//
-// Он показывает абсолютно любой входящий запрос,
-// который дошёл до нашего Node.js приложения.
-//
-
-app.use((req, res, next) => {
-
-  console.log("====================================");
-  console.log("INCOMING REQUEST");
-  console.log("METHOD:", req.method);
-  console.log("URL:", req.url);
-  console.log(
-    "CONTENT-TYPE:",
-    req.headers["content-type"]
-  );
-
-  if (req.body && Object.keys(req.body).length > 0) {
-
-    console.log(
-      "BODY KEYS:",
-      Object.keys(req.body)
-    );
-
-  } else {
-
-    console.log("BODY: EMPTY");
-
-  }
-
-  console.log("====================================");
-
-  next();
+  validateStatus: () => true
 });
 
 
 // ============================================================
-// ПРОВЕРКА ENVIRONMENT VARIABLES
+// STARTUP LOG
 // ============================================================
 
 console.log("====================================");
@@ -102,38 +67,21 @@ console.log(
   BRIDGE_KEY ? "CONFIGURED" : "NOT CONFIGURED"
 );
 
-console.log(
-  "GIGACHAT_SCOPE:",
-  GIGACHAT_SCOPE
-);
-
-console.log(
-  "GIGACHAT_MODEL:",
-  GIGACHAT_MODEL
-);
-
-console.log(
-  "PORT:",
-  PORT
-);
-
-console.log("====================================");
+console.log("GIGACHAT_SCOPE:", GIGACHAT_SCOPE);
+console.log("GIGACHAT_MODEL:", GIGACHAT_MODEL);
+console.log("PORT:", PORT);
 
 
 // ============================================================
-// ПРОВЕРКА КЛЮЧЕЙ
+// ПРОВЕРКА КОНФИГУРАЦИИ
 // ============================================================
 
 if (!GIGACHAT_KEY) {
-  console.error(
-    "ERROR: GIGACHAT_KEY is not configured"
-  );
+  console.error("ERROR: GIGACHAT_KEY is not configured");
 }
 
 if (!BRIDGE_KEY) {
-  console.error(
-    "ERROR: BRIDGE_KEY is not configured"
-  );
+  console.error("ERROR: BRIDGE_KEY is not configured");
 }
 
 
@@ -142,6 +90,8 @@ if (!BRIDGE_KEY) {
 // ============================================================
 
 app.get("/", (req, res) => {
+
+  console.log("ROOT REQUEST RECEIVED");
 
   res.json({
     ok: true,
@@ -153,154 +103,21 @@ app.get("/", (req, res) => {
 
 
 // ============================================================
-// GIGACHAT OAUTH
+// HEALTH
 // ============================================================
 
-async function getGigaChatToken() {
+app.get("/health", (req, res) => {
 
-  console.log(
-    "Requesting GigaChat OAuth token..."
-  );
+  console.log("HEALTH REQUEST RECEIVED");
 
-  const rqUid =
-    require("crypto").randomUUID();
+  res.json({
+    ok: true,
+    status: "alive",
+    service: "Content Constructor Gateway",
+    timestamp: new Date().toISOString()
+  });
 
-  console.log(
-    "RqUID:",
-    rqUid
-  );
-
-  const response = await axios.post(
-    "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
-    new URLSearchParams({
-      scope: GIGACHAT_SCOPE
-    }).toString(),
-    {
-      httpsAgent: httpsAgent,
-
-      timeout: 30000,
-
-      headers: {
-        "Content-Type":
-          "application/x-www-form-urlencoded",
-
-        "Accept":
-          "application/json",
-
-        "RqUID":
-          rqUid,
-
-        "Authorization":
-          `Basic ${GIGACHAT_KEY}`
-      }
-    }
-  );
-
-  console.log(
-    "OAuth response status:",
-    response.status
-  );
-
-  if (
-    !response.data ||
-    !response.data.access_token
-  ) {
-
-    throw new Error(
-      "GigaChat OAuth response does not contain access_token"
-    );
-
-  }
-
-  console.log(
-    "GigaChat OAuth token received successfully"
-  );
-
-  return response.data.access_token;
-}
-
-
-// ============================================================
-// GIGACHAT REQUEST
-// ============================================================
-
-async function sendToGigaChat(prompt) {
-
-  const accessToken =
-    await getGigaChatToken();
-
-  console.log(
-    "Access token obtained"
-  );
-
-  console.log(
-    "Sending request to GigaChat..."
-  );
-
-  const response = await axios.post(
-
-    "https://api.giga.chat/api/v1/chat/completions",
-
-    {
-      model: GIGACHAT_MODEL,
-
-      messages: [
-
-        {
-          role: "system",
-
-          content:
-            "Ты профессиональный контент-маркетолог, контент-стратег и сценарист. Отвечай на русском языке."
-        },
-
-        {
-          role: "user",
-
-          content: prompt
-        }
-
-      ],
-
-      temperature: 0.7
-    },
-
-    {
-
-      httpsAgent: httpsAgent,
-
-      timeout: 120000,
-
-      headers: {
-
-        "Authorization":
-          `Bearer ${accessToken}`,
-
-        "Content-Type":
-          "application/json",
-
-        "Accept":
-          "application/json",
-
-        "User-Agent":
-          "Content-Constructor-Gateway/1.0"
-      }
-    }
-  );
-
-
-  console.log(
-    "GigaChat status:",
-    response.status
-  );
-
-
-  console.log(
-    "GigaChat response received"
-  );
-
-
-  return response.data;
-}
+});
 
 
 // ============================================================
@@ -318,24 +135,57 @@ app.get("/test-auth", async (req, res) => {
     if (!GIGACHAT_KEY) {
 
       return res.status(500).json({
-
         ok: false,
-
         stage: "configuration",
-
-        error:
-          "GIGACHAT_KEY is not configured"
-
+        error: "GIGACHAT_KEY is not configured"
       });
 
     }
 
 
-    const token =
-      await getGigaChatToken();
+    console.log("Requesting GigaChat OAuth token...");
 
 
-    if (!token) {
+    const rqUID = crypto.randomUUID();
+
+    console.log("RqUID:", rqUID);
+
+
+    const tokenResponse = await http.post(
+
+      "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
+
+      new URLSearchParams({
+        scope: GIGACHAT_SCOPE
+      }).toString(),
+
+      {
+        headers: {
+          "Authorization": `Basic ${GIGACHAT_KEY}`,
+          "RqUID": rqUID,
+          "Content-Type":
+            "application/x-www-form-urlencoded"
+        }
+      }
+
+    );
+
+
+    console.log(
+      "OAuth response status:",
+      tokenResponse.status
+    );
+
+
+    if (
+      tokenResponse.status < 200 ||
+      tokenResponse.status >= 300
+    ) {
+
+      console.error(
+        "OAuth error:",
+        tokenResponse.data
+      );
 
       return res.status(500).json({
 
@@ -343,12 +193,42 @@ app.get("/test-auth", async (req, res) => {
 
         stage: "auth",
 
-        error:
-          "Access token was not received"
+        status: tokenResponse.status,
+
+        error: "GigaChat OAuth failed",
+
+        details: tokenResponse.data
 
       });
 
     }
+
+
+    const accessToken =
+      tokenResponse.data &&
+      tokenResponse.data.access_token;
+
+
+    if (!accessToken) {
+
+      return res.status(500).json({
+
+        ok: false,
+
+        stage: "auth",
+
+        error: "OAuth response does not contain access_token",
+
+        details: tokenResponse.data
+
+      });
+
+    }
+
+
+    console.log(
+      "GigaChat OAuth token received successfully"
+    );
 
 
     return res.json({
@@ -366,7 +246,7 @@ app.get("/test-auth", async (req, res) => {
   } catch (error) {
 
     console.error(
-      "TEST AUTH ERROR:",
+      "AUTH ERROR:",
       error
     );
 
@@ -377,18 +257,18 @@ app.get("/test-auth", async (req, res) => {
 
       stage: "auth",
 
-      error_type:
-        typeof error,
+      error_type: typeof error,
 
-      error_name:
-        error.name || null,
+      error_name: error.name,
 
-      error_message:
-        error.message || String(error),
+      error_message: error.message,
 
       error_details:
         error.response
-          ? error.response.data
+          ? {
+              status: error.response.status,
+              data: error.response.data
+            }
           : null
 
     });
@@ -399,7 +279,91 @@ app.get("/test-auth", async (req, res) => {
 
 
 // ============================================================
-// TEST GENERATE
+// ПОЛУЧЕНИЕ GIGACHAT ACCESS TOKEN
+// ============================================================
+
+async function getAccessToken() {
+
+  console.log("Requesting GigaChat OAuth token...");
+
+
+  const rqUID = crypto.randomUUID();
+
+  console.log("RqUID:", rqUID);
+
+
+  const response = await http.post(
+
+    "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
+
+    new URLSearchParams({
+      scope: GIGACHAT_SCOPE
+    }).toString(),
+
+    {
+      headers: {
+        "Authorization": `Basic ${GIGACHAT_KEY}`,
+        "RqUID": rqUID,
+        "Content-Type":
+          "application/x-www-form-urlencoded"
+      }
+    }
+
+  );
+
+
+  console.log(
+    "OAuth response status:",
+    response.status
+  );
+
+
+  if (
+    response.status < 200 ||
+    response.status >= 300
+  ) {
+
+    const error = new Error(
+      "GigaChat OAuth request failed"
+    );
+
+    error.response = response;
+
+    throw error;
+
+  }
+
+
+  const accessToken =
+    response.data &&
+    response.data.access_token;
+
+
+  if (!accessToken) {
+
+    const error = new Error(
+      "OAuth response does not contain access_token"
+    );
+
+    error.response = response;
+
+    throw error;
+
+  }
+
+
+  console.log(
+    "GigaChat OAuth token received successfully"
+  );
+
+
+  return accessToken;
+
+}
+
+
+// ============================================================
+// ТЕСТ GENERATE
 // ============================================================
 
 app.get("/test-generate", async (req, res) => {
@@ -427,12 +391,100 @@ app.get("/test-generate", async (req, res) => {
     }
 
 
-    const prompt =
-      "Ответь одним словом: Да";
+    const accessToken =
+      await getAccessToken();
 
 
-    const response =
-      await sendToGigaChat(prompt);
+    console.log(
+      "Access token obtained"
+    );
+
+
+    console.log(
+      "Sending test request to GigaChat..."
+    );
+
+
+    const response = await http.post(
+
+      "https://api.giga.chat/api/v1/chat/completions",
+
+      {
+
+        model: GIGACHAT_MODEL,
+
+        messages: [
+
+          {
+
+            role: "user",
+
+            content: "Ответь одним словом: Да"
+
+          }
+
+        ],
+
+        temperature: 0.7
+
+      },
+
+      {
+
+        headers: {
+
+          "Authorization":
+            `Bearer ${accessToken}`,
+
+          "Content-Type":
+            "application/json",
+
+          "User-Agent":
+            "Content-Constructor-Gateway/1.0"
+
+        }
+
+      }
+
+    );
+
+
+    console.log(
+      "GigaChat status:",
+      response.status
+    );
+
+
+    console.log(
+      "GigaChat response:"
+    );
+
+    console.dir(
+      response.data,
+      {
+        depth: null
+      }
+    );
+
+
+    if (
+      response.status < 200 ||
+      response.status >= 300
+    ) {
+
+      return res.status(500).json({
+
+        ok: false,
+
+        stage: "generation",
+
+        status: response.status,
+
+        response: response.data
+
+      });
+
+    }
 
 
     return res.json({
@@ -441,9 +493,9 @@ app.get("/test-generate", async (req, res) => {
 
       stage: "generation",
 
-      status: 200,
+      status: response.status,
 
-      response: response
+      response: response.data
 
     });
 
@@ -461,20 +513,25 @@ app.get("/test-generate", async (req, res) => {
 
       ok: false,
 
-      stage: "gigachat",
+      stage: "generation",
 
-      error_type:
-        typeof error,
+      error_type: typeof error,
 
-      error_name:
-        error.name || null,
+      error_name: error.name,
 
-      error_message:
-        error.message || String(error),
+      error_message: error.message,
 
       error_details:
         error.response
-          ? error.response.data
+          ? {
+
+              status:
+                error.response.status,
+
+              data:
+                error.response.data
+
+            }
           : null
 
     });
@@ -485,23 +542,105 @@ app.get("/test-generate", async (req, res) => {
 
 
 // ============================================================
-// ОСНОВНОЙ GENERATE
+// GENERATE — ОСНОВНОЙ ENDPOINT SALEBOT
 // ============================================================
 
 app.post("/generate", async (req, res) => {
 
+  // ==========================================================
+  // ЭТОТ ЛОГ ДОЛЖЕН ПОЯВИТЬСЯ СРАЗУ
+  // ==========================================================
+
+  console.log("");
+  console.log("");
   console.log("====================================");
   console.log("GENERATE REQUEST RECEIVED");
   console.log("====================================");
 
+  console.log(
+    "Time:",
+    new Date().toISOString()
+  );
+
+  console.log(
+    "Method:",
+    req.method
+  );
+
+  console.log(
+    "Content-Type:",
+    req.headers["content-type"]
+  );
+
+  console.log(
+    "Body exists:",
+    !!req.body
+  );
+
 
   try {
 
-    // --------------------------------------------------------
-    // 1. ПРОВЕРКА НАСТРОЕК
-    // --------------------------------------------------------
+    // ========================================================
+    // 1. ПОЛУЧАЕМ BODY
+    // ========================================================
+
+    const body = req.body || {};
+
+
+    console.log(
+      "Body keys:",
+      Object.keys(body)
+    );
+
+
+    console.log(
+      "Received data:"
+    );
+
+
+    console.dir(
+      {
+        bridge_key:
+          body.bridge_key
+            ? "RECEIVED"
+            : "MISSING",
+
+        content_type:
+          body.content_type,
+
+        business_info:
+          body.business_info,
+
+        target_audience:
+          body.target_audience,
+
+        content_goal:
+          body.content_goal,
+
+        reels_topic:
+          body.reels_topic,
+
+        content_style:
+          body.content_style
+
+      },
+
+      {
+        depth: null
+      }
+    );
+
+
+    // ========================================================
+    // 2. ПРОВЕРЯЕМ КОНФИГУРАЦИЮ
+    // ========================================================
 
     if (!GIGACHAT_KEY) {
+
+      console.error(
+        "GIGACHAT_KEY is missing"
+      );
+
 
       return res.status(500).json({
 
@@ -519,6 +658,11 @@ app.post("/generate", async (req, res) => {
 
     if (!BRIDGE_KEY) {
 
+      console.error(
+        "BRIDGE_KEY is missing"
+      );
+
+
       return res.status(500).json({
 
         ok: false,
@@ -533,31 +677,9 @@ app.post("/generate", async (req, res) => {
     }
 
 
-    // --------------------------------------------------------
-    // 2. ПРОВЕРКА BODY
-    // --------------------------------------------------------
-
-    console.log(
-      "Body exists:",
-      !!req.body
-    );
-
-
-    console.log(
-      "Body keys:",
-      req.body
-        ? Object.keys(req.body)
-        : []
-    );
-
-
-    const body =
-      req.body || {};
-
-
-    // --------------------------------------------------------
-    // 3. ПОЛУЧАЕМ ДАННЫЕ SALEBOT
-    // --------------------------------------------------------
+    // ========================================================
+    // 3. ПОЛУЧАЕМ ПЕРЕМЕННЫЕ
+    // ========================================================
 
     const bridge_key =
       body.bridge_key;
@@ -581,52 +703,14 @@ app.post("/generate", async (req, res) => {
       body.content_style;
 
 
-    // --------------------------------------------------------
-    // 4. ЛОГИРУЕМ ЗНАЧЕНИЯ
-    // --------------------------------------------------------
-    //
-    // bridge_key специально НЕ выводим.
-    //
-
-    console.log(
-      "content_type:",
-      JSON.stringify(content_type)
-    );
-
-    console.log(
-      "business_info:",
-      JSON.stringify(business_info)
-    );
-
-    console.log(
-      "target_audience:",
-      JSON.stringify(target_audience)
-    );
-
-    console.log(
-      "content_goal:",
-      JSON.stringify(content_goal)
-    );
-
-    console.log(
-      "reels_topic:",
-      JSON.stringify(reels_topic)
-    );
-
-    console.log(
-      "content_style:",
-      JSON.stringify(content_style)
-    );
-
-
-    // --------------------------------------------------------
-    // 5. ПРОВЕРКА BRIDGE KEY
-    // --------------------------------------------------------
+    // ========================================================
+    // 4. ПРОВЕРКА BRIDGE KEY
+    // ========================================================
 
     if (bridge_key !== BRIDGE_KEY) {
 
       console.error(
-        "Invalid bridge_key"
+        "INVALID BRIDGE KEY"
       );
 
 
@@ -645,46 +729,113 @@ app.post("/generate", async (req, res) => {
 
 
     console.log(
-      "Bridge key validated successfully"
+      "Bridge key: VALID"
     );
 
 
-    // --------------------------------------------------------
+    // ========================================================
+    // 5. ПРОВЕРКА ПЕРЕМЕННЫХ
+    // ========================================================
+
+    console.log(
+      "Checking received variables..."
+    );
+
+
+    const missingFields = [];
+
+
+    if (!content_type)
+      missingFields.push("content_type");
+
+    if (!business_info)
+      missingFields.push("business_info");
+
+    if (!target_audience)
+      missingFields.push("target_audience");
+
+    if (!content_goal)
+      missingFields.push("content_goal");
+
+    if (!reels_topic)
+      missingFields.push("reels_topic");
+
+    if (!content_style)
+      missingFields.push("content_style");
+
+
+    if (missingFields.length > 0) {
+
+      console.error(
+        "MISSING FIELDS:",
+        missingFields
+      );
+
+
+      return res.status(400).json({
+
+        ok: false,
+
+        stage: "validation",
+
+        error:
+          "Не все переменные были переданы из Salebot",
+
+        missing_fields:
+          missingFields,
+
+        received: {
+
+          content_type,
+          business_info,
+          target_audience,
+          content_goal,
+          reels_topic,
+          content_style
+
+        }
+
+      });
+
+    }
+
+
+    console.log(
+      "All variables received successfully"
+    );
+
+
+    // ========================================================
     // 6. ФОРМИРУЕМ PROMPT
-    // --------------------------------------------------------
+    // ========================================================
 
-    const prompt = `
+    const prompt = `Ты — профессиональный контент-маркетолог, контент-стратег и сценарист.
 
-Ты — профессиональный контент-маркетолог,
-контент-стратег и сценарист.
+Ты работаешь внутри продукта «Мой Контент-Конструктор».
 
-Ты работаешь внутри продукта
-«Мой Контент-Конструктор».
-
-Создай максимально качественный готовый контент
-на основе данных пользователя.
+Создай максимально качественный готовый контент на основе данных пользователя.
 
 ==============================
 ДАННЫЕ ПОЛЬЗОВАТЕЛЯ
 ==============================
 
 ТИП КОНТЕНТА:
-${content_type || ""}
+${content_type}
 
 БИЗНЕС:
-${business_info || ""}
+${business_info}
 
 ЦЕЛЕВАЯ АУДИТОРИЯ:
-${target_audience || ""}
+${target_audience}
 
 ЦЕЛЬ КОНТЕНТА:
-${content_goal || ""}
+${content_goal}
 
 ТЕМА:
-${reels_topic || ""}
+${reels_topic}
 
 СТИЛЬ:
-${content_style || ""}
+${content_style}
 
 
 ==============================
@@ -693,8 +844,7 @@ ${content_style || ""}
 
 Учитывай все переданные данные.
 
-Контент должен быть конкретным,
-интересным, естественным и применимым.
+Контент должен быть конкретным, интересным, естественным и применимым.
 
 Не используй шаблонные фразы.
 
@@ -714,27 +864,23 @@ ${content_style || ""}
 Создай полноценный сценарий Reels.
 
 ЗАЦЕПКА:
-Создай сильную первую фразу,
-которая заставит зрителя остановиться.
+Сильная фраза или действие в первые секунды.
 
 СЦЕНАРИЙ:
-Напиши подробный текст ролика
-с последовательностью действий,
-репликами и смыслом каждого блока.
+Подробно распиши, что говорит и делает автор.
 
 ФИНАЛ:
-Создай запоминающийся финал.
+Чем заканчивается ролик.
 
 CTA:
-Добавь естественный призыв
-к действию.
+Конкретный призыв к действию.
 
 
 ==============================
 ЕСЛИ ВЫБРАН ПОСТ
 ==============================
 
-Создай полноценный пост.
+Создай полноценный пост:
 
 Сильное начало.
 
@@ -754,7 +900,7 @@ CTA.
 Создай полноценную структуру карусели.
 
 Слайд 1:
-Сильный заголовок.
+Заголовок и сильный крючок.
 
 Слайд 2:
 ...
@@ -762,74 +908,193 @@ CTA.
 Слайд 3:
 ...
 
-Продолжай столько слайдов,
-сколько необходимо для раскрытия темы.
+Продолжай необходимое количество слайдов.
+
+Последний слайд:
+CTA.
 
 
 ==============================
 ЕСЛИ ВЫБРАН TELEGRAM-ПОСТ
 ==============================
 
-Создай полноценный Telegram-пост
-в указанном стиле.
+Создай полноценный Telegram-пост в указанном стиле.
 
 Не добавляй пояснений вне готового контента.
 
-
-==============================
-ВАЖНО
 ==============================
 
-Не задавай пользователю дополнительных вопросов.
+Верни только готовый контент.`;
 
-Не проси его повторно предоставить данные.
-
-Используй именно те данные,
-которые находятся выше.
-
-Верни сразу готовый контент.
-`;
 
 
     console.log(
-      "Prompt created successfully"
+      "Prompt created"
     );
 
 
-    // --------------------------------------------------------
-    // 7. ОТПРАВЛЯЕМ В GIGACHAT
-    // --------------------------------------------------------
-
-    const response =
-      await sendToGigaChat(prompt);
+    console.log(
+      "Prompt length:",
+      prompt.length
+    );
 
 
-    // --------------------------------------------------------
-    // 8. ПОЛУЧАЕМ РЕЗУЛЬТАТ
-    // --------------------------------------------------------
+    // ========================================================
+    // 7. АВТОРИЗАЦИЯ
+    // ========================================================
+
+    console.log(
+      "Getting GigaChat access token..."
+    );
+
+
+    const accessToken =
+      await getAccessToken();
+
+
+    console.log(
+      "Access token obtained"
+    );
+
+
+    // ========================================================
+    // 8. ЗАПРОС GIGACHAT
+    // ========================================================
+
+    console.log(
+      "Sending request to GigaChat..."
+    );
+
+
+    const gigaResponse = await http.post(
+
+      "https://api.giga.chat/api/v1/chat/completions",
+
+      {
+
+        model: GIGACHAT_MODEL,
+
+        messages: [
+
+          {
+
+            role: "system",
+
+            content:
+              "Ты профессиональный контент-маркетолог, контент-стратег и сценарист. Отвечай на русском языке."
+
+          },
+
+          {
+
+            role: "user",
+
+            content: prompt
+
+          }
+
+        ],
+
+        temperature: 0.7
+
+      },
+
+      {
+
+        headers: {
+
+          "Authorization":
+            `Bearer ${accessToken}`,
+
+          "Content-Type":
+            "application/json",
+
+          "User-Agent":
+            "Content-Constructor-Gateway/1.0"
+
+        }
+
+      }
+
+    );
+
+
+    console.log(
+      "GigaChat status:",
+      gigaResponse.status
+    );
+
+
+    // ========================================================
+    // 9. ПРОВЕРКА ОТВЕТА GIGACHAT
+    // ========================================================
+
+    if (
+      gigaResponse.status < 200 ||
+      gigaResponse.status >= 300
+    ) {
+
+      console.error(
+        "GigaChat returned error:"
+      );
+
+      console.dir(
+        gigaResponse.data,
+        {
+          depth: null
+        }
+      );
+
+
+      return res.status(502).json({
+
+        ok: false,
+
+        stage: "gigachat",
+
+        status:
+          gigaResponse.status,
+
+        error:
+          "GigaChat returned an error",
+
+        details:
+          gigaResponse.data
+
+      });
+
+    }
+
+
+    console.log(
+      "GigaChat response received successfully"
+    );
+
+
+    console.dir(
+      gigaResponse.data,
+      {
+        depth: 4
+      }
+    );
+
+
+    // ========================================================
+    // 10. ИЗВЛЕКАЕМ ТЕКСТ
+    // ========================================================
 
     const result =
-      response &&
-      response.choices &&
-      response.choices[0] &&
-      response.choices[0].message &&
-      response.choices[0].message.content;
+      gigaResponse.data &&
+      gigaResponse.data.choices &&
+      gigaResponse.data.choices[0] &&
+      gigaResponse.data.choices[0].message &&
+      gigaResponse.data.choices[0].message.content;
 
-
-    console.log(
-      "Result exists:",
-      !!result
-    );
-
-
-    // --------------------------------------------------------
-    // 9. ЕСЛИ GIGACHAT НЕ ВЕРНУЛ ТЕКСТ
-    // --------------------------------------------------------
 
     if (!result) {
 
       console.error(
-        "GigaChat response does not contain message.content"
+        "GigaChat response does not contain content"
       );
 
 
@@ -843,51 +1108,83 @@ CTA.
           "GigaChat response does not contain message.content",
 
         response:
-          response || null
+          gigaResponse.data
 
       });
 
     }
 
 
-    // --------------------------------------------------------
-    // 10. ВОЗВРАЩАЕМ РЕЗУЛЬТАТ В SALEBOT
-    // --------------------------------------------------------
-
     console.log(
-      "Returning generated content to Salebot"
+      "Generated content length:",
+      result.length
     );
 
 
-    return res.json({
+    // ========================================================
+    // 11. ВОЗВРАЩАЕМ РЕЗУЛЬТАТ SALEBOT
+    // ========================================================
+
+    console.log(
+      "Sending result back to Salebot..."
+    );
+
+
+    const finalResponse = {
 
       ok: true,
 
       reels_result: result
 
-    });
+    };
+
+
+    console.log(
+      "===================================="
+    );
+
+    console.log(
+      "GENERATE COMPLETED SUCCESSFULLY"
+    );
+
+    console.log(
+      "===================================="
+    );
+
+
+    return res.status(200).json(
+      finalResponse
+    );
 
 
   } catch (error) {
 
-    console.error("====================================");
+    console.error("");
+    console.error(
+      "===================================="
+    );
 
     console.error(
       "GENERATE ERROR"
     );
 
     console.error(
-      "ERROR TYPE:",
+      "===================================="
+    );
+
+
+    console.error(
+      "Error type:",
       typeof error
     );
 
     console.error(
-      "ERROR NAME:",
+      "Error name:",
       error.name
     );
 
     console.error(
-      "ERROR MESSAGE:",
+      "Error message:",
       error.message
     );
 
@@ -895,124 +1192,22 @@ CTA.
     if (error.response) {
 
       console.error(
-        "HTTP STATUS:",
+        "HTTP status:",
         error.response.status
       );
 
       console.error(
-        "RESPONSE DATA:",
-        error.response.data
+        "HTTP response:"
+      );
+
+      console.dir(
+        error.response.data,
+        {
+          depth: null
+        }
       );
 
     }
 
 
-    console.error("====================================");
-
-
-    return res.status(500).json({
-
-      ok: false,
-
-      stage: "gigachat",
-
-      error_type:
-        typeof error,
-
-      error_name:
-        error.name || null,
-
-      error_message:
-        error.message || String(error),
-
-      error_details:
-        error.response
-          ? {
-              status:
-                error.response.status,
-
-              data:
-                error.response.data
-            }
-          : null
-
-    });
-
-  }
-
-});
-
-
-// ============================================================
-// 404
-// ============================================================
-
-app.use((req, res) => {
-
-  console.log(
-    "404 REQUEST:",
-    req.method,
-    req.url
-  );
-
-
-  res.status(404).json({
-
-    ok: false,
-
-    error:
-      "Endpoint not found",
-
-    method:
-      req.method,
-
-    url:
-      req.url
-
-  });
-
-});
-
-
-// ============================================================
-// GLOBAL ERROR HANDLER
-// ============================================================
-
-app.use((error, req, res, next) => {
-
-  console.error(
-    "GLOBAL EXPRESS ERROR:",
-    error
-  );
-
-
-  res.status(500).json({
-
-    ok: false,
-
-    stage: "express",
-
-    error:
-      error.message ||
-      String(error)
-
-  });
-
-});
-
-
-// ============================================================
-// ЗАПУСК
-// ============================================================
-
-app.listen(
-  PORT,
-  "0.0.0.0",
-  () => {
-
-    console.log(
-      `Content Constructor Gateway running on port ${PORT}`
-    );
-
-  }
-);
+    return res.status(
