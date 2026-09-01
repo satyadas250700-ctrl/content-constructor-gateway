@@ -1236,4 +1236,200 @@ app.post(
 
       const result =
         await generateContent(
-        
+          data
+        );
+
+      const elapsed =
+        Date.now() -
+        startedAt;
+
+      console.log(
+        'GENERATION SUCCESS'
+      );
+
+      console.log(
+        'Elapsed ms:',
+        elapsed
+      );
+
+      console.log(
+        'Result length:',
+        result.content.length
+      );
+
+      /*
+         Именно этот формат
+         ожидает Salebot.
+      */
+
+      return res.json({
+
+        ok: true,
+
+        reels_result:
+          result.content,
+
+        generation_time_ms:
+          elapsed
+      });
+
+    } catch (error) {
+
+      const elapsed =
+        Date.now() -
+        startedAt;
+
+      console.error(
+        'GENERATION ERROR'
+      );
+
+      console.error(
+        'Elapsed ms:',
+        elapsed
+      );
+
+      console.error(
+        JSON.stringify(
+          errorPayload(error),
+          null,
+          2
+        )
+      );
+
+      return res
+        .status(500)
+        .json({
+
+          ok: false,
+
+          stage:
+            'generation',
+
+          generation_time_ms:
+            elapsed,
+
+          ...errorPayload(error)
+        });
+    }
+  }
+);
+
+/* =========================================================
+   404
+========================================================= */
+
+app.use(
+  (req, res) => {
+
+    res
+      .status(404)
+      .json({
+
+        ok: false,
+
+        error:
+          'Endpoint not found',
+
+        method:
+          req.method,
+
+        url:
+          req.originalUrl
+      });
+  }
+);
+
+/* =========================================================
+   EXPRESS ERROR HANDLER
+========================================================= */
+
+app.use(
+  (error, req, res, next) => {
+
+    console.error(
+      'EXPRESS ERROR:',
+      error
+    );
+
+    if (
+      res.headersSent
+    ) {
+      return next(error);
+    }
+
+    res
+      .status(500)
+      .json({
+
+        ok: false,
+
+        stage:
+          'server',
+
+        error:
+          error?.message ||
+          String(error)
+      });
+  }
+);
+
+/* =========================================================
+   START SERVER
+========================================================= */
+
+app.listen(
+  PORT,
+  '0.0.0.0',
+  () => {
+
+    console.log(
+      '===================================='
+    );
+
+    console.log(
+      'CONTENT CONSTRUCTOR GATEWAY'
+    );
+
+    console.log(
+      '===================================='
+    );
+
+    console.log(
+      'GIGACHAT_KEY:',
+      GIGACHAT_KEY
+        ? 'CONFIGURED'
+        : 'MISSING'
+    );
+
+    console.log(
+      'BRIDGE_KEY:',
+      BRIDGE_KEY
+        ? 'CONFIGURED'
+        : 'MISSING'
+    );
+
+    console.log(
+      'GIGACHAT_SCOPE:',
+      GIGACHAT_SCOPE
+    );
+
+    console.log(
+      'GIGACHAT_MODEL:',
+      GIGACHAT_MODEL
+    );
+
+    console.log(
+      'CHAT_URL:',
+      CHAT_URL
+    );
+
+    console.log(
+      'PORT:',
+      PORT
+    );
+
+    console.log(
+      `Content Constructor Gateway running on port ${PORT}`
+    );
+  }
+);
