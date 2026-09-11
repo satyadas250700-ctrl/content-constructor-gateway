@@ -7,6 +7,10 @@ const app = express();
 
 app.use(express.json({ limit: "1mb" }));
 
+// ============================================================
+// CONFIG
+// ============================================================
+
 const PORT = process.env.PORT || 10000;
 
 const GIGACHAT_KEY = process.env.GIGACHAT_KEY;
@@ -24,18 +28,18 @@ const OAUTH_URL =
 const CHAT_URL =
   "https://api.giga.chat/v1/chat/completions";
 
-
-// ============================================================
-// HTTPS AGENT
-// ============================================================
-
+// GigaChat certificates can cause problems in some environments.
 const httpsAgent = new https.Agent({
-  rejectUnauthorized: false
+  rejectUnauthorized: false,
 });
 
+const http = axios.create({
+  httpsAgent,
+  timeout: 11000,
+});
 
 // ============================================================
-// STARTUP INFORMATION
+// STARTUP
 // ============================================================
 
 console.log("====================================");
@@ -44,12 +48,12 @@ console.log("====================================");
 
 console.log(
   "GIGACHAT_KEY:",
-  GIGACHAT_KEY ? "CONFIGURED" : "NOT CONFIGURED"
+  GIGACHAT_KEY ? "CONFIGURED" : "MISSING"
 );
 
 console.log(
   "BRIDGE_KEY:",
-  BRIDGE_KEY ? "CONFIGURED" : "NOT CONFIGURED"
+  BRIDGE_KEY ? "CONFIGURED" : "MISSING"
 );
 
 console.log("GIGACHAT_SCOPE:", GIGACHAT_SCOPE);
@@ -57,87 +61,75 @@ console.log("GIGACHAT_MODEL:", GIGACHAT_MODEL);
 console.log("CHAT_URL:", CHAT_URL);
 console.log("PORT:", PORT);
 
-console.log("====================================");
-
-
 // ============================================================
-// ERROR FORMATTER
+// TOKEN CACHE
 // ============================================================
 
-function formatError(error) {
+let cachedToken = null;
+let tokenExpiresAt = 0;
 
-  const result = {
-    type: typeof error,
-    name: error?.name || null,
-    message: error?.message || String(error)
-  };
+// ============================================================
+// HELPERS
+// ============================================================
 
-  if (error?.response) {
-
-    result.http_status =
-      error.response.status || null;
-
-    result.response_data =
-      error.response.data || null;
-
-    result.response_headers =
-      error.response.headers || null;
-  }
-
-  if (error?.code) {
-    result.code = error.code;
-  }
-
-  return result;
+function generateRqUID() {
+  return crypto.randomUUID();
 }
 
+function cleanText(value) {
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  return String(value).trim();
+}
 
 // ============================================================
-// GET GIGACHAT ACCESS TOKEN
+// GIGACHAT AUTH
 // ============================================================
 
 async function getAccessToken() {
-
   console.log("====================================");
   console.log("GIGACHAT AUTH STARTED");
   console.log("====================================");
+
+  // Reuse cached token when possible.
+  if (
+    cachedToken &&
+    Date.now() < tokenExpiresAt - 30000
+  ) {
+    console.log("Using cached GigaChat access token");
+    return cachedToken;
+  }
 
   if (!GIGACHAT_KEY) {
     throw new Error("GIGACHAT_KEY is not configured");
   }
 
-  const rqUid = crypto.randomUUID();
+  const rqUID = generateRqUID();
 
-  console.log("RqUID:", rqUid);
+  console.log("RqUID:", rqUID);
   console.log("Requesting GigaChat OAuth token...");
 
-  const started = Date.now();
+  const startTime = Date.now();
 
-  const response = await axios.post(
+  const response = await http.post(
     OAUTH_URL,
     new URLSearchParams({
-      scope: GIGACHAT_SCOPE
+      scope: GIGACHAT_SCOPE,
     }).toString(),
     {
-      httpsAgent: httpsAgent,
-
-      timeout: 8000,
-
       headers: {
         "Content-Type":
           "application/x-www-form-urlencoded",
-
-        "Accept":
-          "application/json",
-
-        "RqUID":
-          rqUid,
-
-        "Authorization":
-          `Basic ${GIGACHAT_KEY}`
-      }
+        Accept: "application/json",
+        RqUID: rqUID,
+        Authorization: `Basic ${GIGACHAT_KEY}`,
+      },
     }
   );
+
+  const elapsed = Date.now() - startTime;
 
   console.log(
     "OAuth response status:",
@@ -146,218 +138,345 @@ async function getAccessToken() {
 
   console.log(
     "OAuth time:",
-    Date.now() - started,
+    elapsed,
     "ms"
   );
 
-  if (!response.data?.access_token) {
-
+  if (!response.data || !response.data.access_token) {
     throw new Error(
       "GigaChat OAuth response does not contain access_token"
     );
   }
 
+  cachedToken = response.data.access_token;
+
+  const expiresIn =
+    Number(response.data.expires_in) || 1800;
+
+  tokenExpiresAt =
+    Date.now() + expiresIn * 1000;
+
   console.log(
     "GigaChat OAuth token received successfully"
   );
 
-  return response.data.access_token;
+  return cachedToken;
 }
 
+// ============================================================
+// CONTENT DNA
+// ============================================================
+
+function buildPrompt(data) {
+  const {
+    content_type,
+    business_info,
+    target_audience,
+    content_goal,
+    reels_topic,
+    content_style,
+  } = data;
+
+  return `
+Ты — профессиональный контент-стратег, маркетолог, сценарист коротких видео и редактор социальных сетей.
+
+Ты работаешь внутри продукта «МОЙ КОНТЕНТ-КОНСТРУКТОР».
+
+Твоя задача — создавать контент, который предприниматель или эксперт может практически сразу использовать в социальных сетях.
+
+Главный принцип:
+
+НЕ пиши шаблонный текст ради текста.
+
+Сначала мысленно определи:
+1. кто говорит;
+2. кому он говорит;
+3. какую проблему или желание аудитории затрагиваем;
+4. зачем создаётся этот контент;
+5. какой угол подачи лучше всего сработает;
+6. какое действие должен совершить зритель после просмотра.
+
+Используй предоставленные данные как основу.
+
+==============================
+ДАННЫЕ БИЗНЕСА
+==============================
+
+Тип контента:
+${content_type}
+
+Бизнес:
+${business_info}
+
+Целевая аудитория:
+${target_audience}
+
+Цель контента:
+${content_goal}
+
+Тема:
+${reels_topic}
+
+Стиль:
+${content_style}
+
+==============================
+ОСНОВНЫЕ ПРАВИЛА
+==============================
+
+1. Пиши на естественном современном русском языке.
+
+2. Не используй канцелярит.
+
+3. Не используй фразы вроде:
+«В современном мире»
+«Важно понимать»
+«Стоит отметить»
+«Сегодня я расскажу вам»
+«Давайте разберёмся»
+«Как известно»
+и другие очевидные шаблоны.
+
+4. Не начинай ролик с длинного вступления.
+
+5. Первые секунды должны сразу давать причину продолжить просмотр.
+
+6. Учитывай конкретную целевую аудиторию.
+
+7. Не придумывай факты о бизнесе, которых нет в исходных данных.
+
+8. Не обещай невозможных результатов.
+
+9. Если цель — продажи, не превращай ролик в навязчивую рекламу.
+
+10. Если цель — экспертность, показывай её через конкретную мысль, пример, объяснение или наблюдение, а не через заявление «я эксперт».
+
+11. Если стиль провокационный — допускается резкий, смелый и цепляющий заход, но без бессмысленного оскорбления аудитории.
+
+12. Каждый элемент сценария должен выполнять функцию.
+
+==============================
+ДНК REELS
+==============================
+
+Для Reels используй структуру:
+
+1. ХУК
+
+Одна сильная первая фраза.
+
+Она должна:
+- вызвать любопытство;
+- обозначить проблему;
+- удивить;
+- бросить вызов распространённому мнению;
+или
+- создать эмоциональное напряжение.
+
+2. ОСНОВНАЯ ЧАСТЬ
+
+Развивай одну главную мысль.
+
+Не пытайся рассказать всё сразу.
+
+Используй конкретику, примеры, контраст или короткую историю.
+
+3. ФИНАЛ
+
+Сделай вывод, который логично завершает мысль.
+
+4. CTA
+
+Призыв к действию должен соответствовать цели контента.
+
+CTA не должен выглядеть как навязчивая реклама.
+
+5. ИДЕЯ СЪЁМКИ
+
+Дай простую практическую рекомендацию, как снять ролик.
+
+==============================
+ФОРМАТ ОТВЕТА
+==============================
+
+Верни ТОЛЬКО готовый контент.
+
+Используй следующую структуру:
+
+🔥 ГОТОВЫЙ СЦЕНАРИЙ REELS
+
+🎯 ХУК:
+[сильная первая фраза]
+
+🎬 СЦЕНАРИЙ:
+
+Кадр 1:
+[что происходит в кадре]
+
+Текст:
+[что говорит автор]
+
+Кадр 2:
+[что происходит в кадре]
+
+Текст:
+[что говорит автор]
+
+Кадр 3:
+[что происходит в кадре]
+
+Текст:
+[что говорит автор]
+
+Кадр 4:
+[что происходит в кадре]
+
+Текст:
+[что говорит автор]
+
+🎯 ФИНАЛ:
+[завершающая мысль]
+
+📢 CTA:
+[призыв к действию]
+
+💡 ИДЕЯ ДЛЯ СЪЁМКИ:
+[как просто снять ролик]
+
+==============================
+ВАЖНО
+==============================
+
+Не добавляй никаких пояснений от себя.
+
+Не пиши:
+«Вот ваш сценарий»
+«Надеюсь, вам понравится»
+«При необходимости могу изменить»
+и подобные фразы.
+
+Сразу выдавай готовый результат.
+
+Контент должен ощущаться так, будто его подготовил сильный российский контент-маркетолог, который понимает конкретный бизнес и его аудиторию.
+`.trim();
+}
 
 // ============================================================
 // HEALTH
 // ============================================================
 
-app.get("/", (req, res) => {
-
+app.get("/health", (req, res) => {
   res.json({
     ok: true,
     service: "Content Constructor Gateway",
-    status: "working"
+    status: "working",
+    gigaChatKey: GIGACHAT_KEY
+      ? "CONFIGURED"
+      : "MISSING",
+    bridgeKey: BRIDGE_KEY
+      ? "CONFIGURED"
+      : "MISSING",
+    model: GIGACHAT_MODEL,
+    time: new Date().toISOString(),
   });
-
 });
 
+// ============================================================
+// ROOT
+// ============================================================
 
-app.get("/health", (req, res) => {
-
+app.get("/", (req, res) => {
   res.json({
-
     ok: true,
-
-    service:
-      "Content Constructor Gateway",
-
-    status:
-      "working",
-
-    gigaChatKey:
-      GIGACHAT_KEY
-        ? "CONFIGURED"
-        : "NOT CONFIGURED",
-
-    bridgeKey:
-      BRIDGE_KEY
-        ? "CONFIGURED"
-        : "NOT CONFIGURED",
-
-    model:
-      GIGACHAT_MODEL,
-
-    time:
-      new Date().toISOString()
-
+    service: "Content Constructor Gateway",
+    message: "Gateway is working",
+    endpoints: {
+      health: "GET /health",
+      testAuth: "GET /test-auth",
+      testGenerate: "GET /test-generate",
+      generate: "POST /generate",
+    },
   });
-
 });
-
 
 // ============================================================
 // TEST AUTH
 // ============================================================
 
 app.get("/test-auth", async (req, res) => {
-
-  console.log("====================================");
-  console.log("TEST AUTH STARTED");
-  console.log("====================================");
-
   try {
+    console.log("====================================");
+    console.log("TEST AUTH STARTED");
+    console.log("====================================");
 
-    const token =
-      await getAccessToken();
+    const token = await getAccessToken();
 
-    return res.json({
-
+    res.json({
       ok: true,
-
-      stage: "auth",
-
+      stage: "authentication",
       message:
-        "Авторизация GigaChat прошла успешно",
-
-      token_received:
-        !!token
-
+        "GigaChat authentication successful",
+      tokenReceived: Boolean(token),
     });
-
   } catch (error) {
-
     console.error(
       "TEST AUTH ERROR:",
-      formatError(error)
+      error.response?.data ||
+        error.message ||
+        error
     );
 
-    return res.status(500).json({
-
+    res.status(500).json({
       ok: false,
-
-      stage: "auth",
-
+      stage: "authentication",
       error:
-        "GigaChat authorization failed",
-
-      error_details:
-        formatError(error)
-
+        error.response?.data ||
+        error.message ||
+        String(error),
     });
-
   }
-
 });
-
 
 // ============================================================
 // TEST GENERATE
 // ============================================================
 
 app.get("/test-generate", async (req, res) => {
-
-  console.log("====================================");
-  console.log("TEST GENERATE STARTED");
-  console.log("====================================");
-
   try {
+    console.log("====================================");
+    console.log("TEST GENERATE STARTED");
+    console.log("====================================");
 
-    const token =
-      await getAccessToken();
+    const token = await getAccessToken();
 
-    console.log(
-      "Access token obtained"
-    );
+    console.log("Access token obtained");
+    console.log("Sending test request to GigaChat...");
 
-    console.log(
-      "Sending test request to GigaChat..."
-    );
+    const startTime = Date.now();
 
-    const started =
-      Date.now();
-
-    const response =
-      await axios.post(
-
-        CHAT_URL,
-
-        {
-          model:
-            GIGACHAT_MODEL,
-
-          messages: [
-
-            {
-              role:
-                "system",
-
-              content:
-                "Отвечай кратко на русском языке."
-            },
-
-            {
-              role:
-                "user",
-
-              content:
-                "Ответь одним словом: Да"
-            }
-
-          ],
-
-          temperature:
-            0.2,
-
-          max_tokens:
-            10
-
+    const response = await http.post(
+      CHAT_URL,
+      {
+        model: GIGACHAT_MODEL,
+        messages: [
+          {
+            role: "user",
+            content: "Ответь одним словом: Да",
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 10,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
         },
+      }
+    );
 
-        {
-
-          httpsAgent:
-            httpsAgent,
-
-          timeout:
-            10000,
-
-          headers: {
-
-            "Authorization":
-              `Bearer ${token}`,
-
-            "Content-Type":
-              "application/json",
-
-            "Accept":
-              "application/json",
-
-            "User-Agent":
-              "Content-Constructor-Gateway/1.0"
-
-          }
-
-        }
-
-      );
+    const elapsed = Date.now() - startTime;
 
     console.log(
       "GigaChat status:",
@@ -366,7 +485,7 @@ app.get("/test-generate", async (req, res) => {
 
     console.log(
       "Generation time:",
-      Date.now() - started,
+      elapsed,
       "ms"
     );
 
@@ -380,74 +499,42 @@ app.get("/test-generate", async (req, res) => {
     );
 
     const result =
-      response.data
-        ?.choices?.[0]
-        ?.message
-        ?.content;
+      response.data?.choices?.[0]?.message?.content ||
+      "";
 
-    return res.json({
-
-      ok:
-        true,
-
-      stage:
-        "generation",
-
-      status:
-        response.status,
-
-      response:
-        response.data,
-
-      reels_result:
-        result || ""
-
+    res.json({
+      ok: true,
+      stage: "generation",
+      status: response.status,
+      response: response.data,
+      reels_result: result,
     });
-
   } catch (error) {
-
     console.error(
       "TEST GENERATE ERROR:",
-      formatError(error)
+      error.response?.data ||
+        error.message ||
+        error
     );
 
-    return res.status(500).json({
-
-      ok:
-        false,
-
-      stage:
-        "gigachat",
-
-      error_type:
-        typeof error,
-
-      error_name:
-        error?.name || null,
-
-      error_message:
-        error?.message || String(error),
-
-      error_details:
-        formatError(error)
-
+    res.status(500).json({
+      ok: false,
+      stage: "generation",
+      error:
+        error.response?.data ||
+        error.message ||
+        String(error),
     });
-
   }
-
 });
 
-
 // ============================================================
-// GENERATE CONTENT
+// MAIN GENERATE ENDPOINT
 // ============================================================
 
 app.post("/generate", async (req, res) => {
+  const requestStartTime = Date.now();
 
-  const requestStarted =
-    Date.now();
-
-  console.log("");
   console.log("====================================");
   console.log("GENERATE REQUEST RECEIVED");
   console.log("====================================");
@@ -464,89 +551,42 @@ app.post("/generate", async (req, res) => {
 
   console.log(
     "Body exists:",
-    !!req.body
+    Boolean(req.body)
   );
 
   console.log(
     "Body keys:",
-    req.body
-      ? Object.keys(req.body)
-      : []
+    Object.keys(req.body || {})
   );
 
-
   try {
-
     // ========================================================
-    // 1. CONFIGURATION
+    // GET DATA
     // ========================================================
-
-    if (!GIGACHAT_KEY) {
-
-      return res.status(500).json({
-
-        ok: false,
-
-        stage:
-          "configuration",
-
-        error:
-          "GIGACHAT_KEY is not configured"
-
-      });
-
-    }
-
-
-    if (!BRIDGE_KEY) {
-
-      return res.status(500).json({
-
-        ok: false,
-
-        stage:
-          "configuration",
-
-        error:
-          "BRIDGE_KEY is not configured"
-
-      });
-
-    }
-
-
-    // ========================================================
-    // 2. RECEIVE SALEBOT DATA
-    // ========================================================
-
-    const body =
-      req.body || {};
-
 
     const bridge_key =
-      body.bridge_key;
+      cleanText(req.body?.bridge_key);
 
     const content_type =
-      body.content_type;
+      cleanText(req.body?.content_type);
 
     const business_info =
-      body.business_info;
+      cleanText(req.body?.business_info);
 
     const target_audience =
-      body.target_audience;
+      cleanText(req.body?.target_audience);
 
     const content_goal =
-      body.content_goal;
+      cleanText(req.body?.content_goal);
 
     const reels_topic =
-      body.reels_topic;
+      cleanText(req.body?.reels_topic);
 
     const content_style =
-      body.content_style;
-
+      cleanText(req.body?.content_style);
 
     // ========================================================
-    // 3. LOG VARIABLES
+    // LOG VARIABLES
     // ========================================================
 
     console.log("====================================");
@@ -583,172 +623,114 @@ app.post("/generate", async (req, res) => {
       JSON.stringify(content_style)
     );
 
-    console.log("====================================");
-
-
     // ========================================================
-    // 4. CHECK BRIDGE KEY
+    // BRIDGE KEY VALIDATION
     // ========================================================
 
-    if (bridge_key !== BRIDGE_KEY) {
-
+    if (!BRIDGE_KEY) {
       console.error(
-        "INVALID BRIDGE KEY"
+        "BRIDGE_KEY is not configured"
+      );
+
+      return res.status(500).json({
+        ok: false,
+        error: "BRIDGE_KEY is not configured",
+      });
+    }
+
+    if (!bridge_key) {
+      console.error(
+        "Bridge key was not provided"
       );
 
       return res.status(401).json({
-
-        ok:
-          false,
-
-        stage:
-          "security",
-
-        error:
-          "Invalid bridge_key"
-
+        ok: false,
+        error: "Bridge key is missing",
       });
-
     }
 
-
-    console.log(
-      "Bridge key: VALID"
-    );
-
-
-    // ========================================================
-    // 5. BASIC VALIDATION
-    // ========================================================
-
-    if (!content_type) {
-
-      console.warn(
-        "WARNING: content_type is empty"
+    if (bridge_key !== BRIDGE_KEY) {
+      console.error(
+        "Bridge key validation failed"
       );
 
+      return res.status(401).json({
+        ok: false,
+        error: "Invalid bridge_key",
+      });
+    }
+
+    console.log("Bridge key: VALID");
+
+    // ========================================================
+    // REQUIRED FIELDS
+    // ========================================================
+
+    const missingFields = [];
+
+    if (!content_type) {
+      missingFields.push("content_type");
     }
 
     if (!business_info) {
-
-      console.warn(
-        "WARNING: business_info is empty"
-      );
-
+      missingFields.push("business_info");
     }
 
     if (!target_audience) {
-
-      console.warn(
-        "WARNING: target_audience is empty"
-      );
-
+      missingFields.push("target_audience");
     }
 
     if (!content_goal) {
-
-      console.warn(
-        "WARNING: content_goal is empty"
-      );
-
+      missingFields.push("content_goal");
     }
 
     if (!reels_topic) {
-
-      console.warn(
-        "WARNING: reels_topic is empty"
-      );
-
+      missingFields.push("reels_topic");
     }
 
     if (!content_style) {
-
-      console.warn(
-        "WARNING: content_style is empty"
-      );
-
+      missingFields.push("content_style");
     }
 
+    if (missingFields.length > 0) {
+      console.error(
+        "Missing required fields:",
+        missingFields
+      );
+
+      return res.status(400).json({
+        ok: false,
+        error: "Missing required fields",
+        fields: missingFields,
+      });
+    }
 
     // ========================================================
-    // 6. AUTH
+    // GET GIGACHAT TOKEN
     // ========================================================
 
     console.log(
       "Getting GigaChat access token..."
     );
 
-    const token =
-      await getAccessToken();
+    const token = await getAccessToken();
 
     console.log(
       "Access token obtained"
     );
 
-
     // ========================================================
-    // 7. PROMPT
+    // BUILD PROMPT
     // ========================================================
 
-    const prompt = `Ты — профессиональный контент-маркетолог и сценарист.
-
-Создай готовый контент для пользователя.
-
-ДАННЫЕ:
-
-Тип контента:
-${content_type || "не указан"}
-
-Бизнес:
-${business_info || "не указан"}
-
-Целевая аудитория:
-${target_audience || "не указана"}
-
-Цель:
-${content_goal || "не указана"}
-
-Тема:
-${reels_topic || "не указана"}
-
-Стиль:
-${content_style || "не указан"}
-
-ТРЕБОВАНИЯ:
-
-Используй ВСЕ данные пользователя.
-
-Не задавай дополнительных вопросов.
-
-Не объясняй процесс работы.
-
-Сразу выдай готовый результат.
-
-Не используй фразы вроде:
-"я готов создать",
-"предоставьте данные",
-"уточните информацию".
-
-Если тип контента — Reels, создай:
-
-ЗАГОЛОВОК / ХУК
-
-СЦЕНАРИЙ
-
-ФИНАЛ
-
-CTA
-
-Добавляй конкретные действия в кадре, текст на экране и реплики.
-
-Если тип контента — Пост, создай готовый пост с сильным началом, основной частью, пользой, финалом и CTA.
-
-Если тип контента — Карусель, создай структуру слайдов с текстом каждого слайда.
-
-Если тип контента — Telegram-пост, создай полностью готовый Telegram-пост.
-
-Не добавляй никаких пояснений до или после готового контента.`;
-
+    const prompt = buildPrompt({
+      content_type,
+      business_info,
+      target_audience,
+      content_goal,
+      reels_topic,
+      content_style,
+    });
 
     console.log(
       "Prompt length:",
@@ -756,89 +738,52 @@ CTA
       "characters"
     );
 
-
     // ========================================================
-    // 8. SEND TO GIGACHAT
+    // GENERATION
     // ========================================================
 
     console.log(
       "Sending request to GigaChat..."
     );
 
-    const generationStarted =
+    const generationStartTime =
       Date.now();
 
+    const response = await http.post(
+      CHAT_URL,
+      {
+        model: GIGACHAT_MODEL,
 
-    const response =
-      await axios.post(
+        messages: [
+          {
+            role: "system",
+            content:
+              "Ты работаешь как профессиональный контент-стратег и сценарист внутри сервиса «МОЙ КОНТЕНТ-КОНСТРУКТОР».",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
 
-        CHAT_URL,
+        temperature: 0.75,
 
-        {
-
-          model:
-            GIGACHAT_MODEL,
-
-          messages: [
-
-            {
-
-              role:
-                "system",
-
-              content:
-                "Ты профессиональный контент-маркетолог и сценарист. Отвечай только готовым результатом на русском языке."
-
-            },
-
-            {
-
-              role:
-                "user",
-
-              content:
-                prompt
-
-            }
-
-          ],
-
-          temperature:
-            0.7,
-
-          max_tokens:
-            450
-
+        max_tokens: 1800,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type":
+            "application/json",
+          Accept:
+            "application/json",
         },
+      }
+    );
 
-        {
-
-          httpsAgent:
-            httpsAgent,
-
-          timeout:
-            12000,
-
-          headers: {
-
-            "Authorization":
-              `Bearer ${token}`,
-
-            "Content-Type":
-              "application/json",
-
-            "Accept":
-              "application/json",
-
-            "User-Agent":
-              "Content-Constructor-Gateway/1.0"
-
-          }
-
-        }
-
-      );
-
+    const generationTime =
+      Date.now() -
+      generationStartTime;
 
     console.log(
       "GigaChat HTTP status:",
@@ -847,49 +792,38 @@ CTA
 
     console.log(
       "GigaChat generation time:",
-      Date.now() - generationStarted,
+      generationTime,
       "ms"
     );
 
-
     // ========================================================
-    // 9. EXTRACT RESULT
+    // EXTRACT RESULT
     // ========================================================
 
     const result =
-      response.data
-        ?.choices?.[0]
-        ?.message
-        ?.content;
-
+      response.data?.choices?.[0]?.message?.content ||
+      "";
 
     if (!result) {
-
       console.error(
         "GigaChat returned empty content"
       );
 
       return res.status(502).json({
-
-        ok:
-          false,
-
-        stage:
-          "generation",
-
+        ok: false,
         error:
-          "GigaChat response does not contain message.content",
-
-        response:
-          response.data
-
+          "GigaChat returned empty content",
       });
-
     }
 
+    // ========================================================
+    // SUCCESS
+    // ========================================================
 
     console.log("====================================");
-    console.log("CONTENT GENERATED SUCCESSFULLY");
+    console.log(
+      "CONTENT GENERATED SUCCESSFULLY"
+    );
     console.log("====================================");
 
     console.log(
@@ -900,115 +834,108 @@ CTA
 
     console.log(
       "Total request time:",
-      Date.now() - requestStarted,
+      Date.now() -
+        requestStartTime,
       "ms"
     );
 
-    console.log("====================================");
-
-
-    // ========================================================
-    // 10. RETURN TO SALEBOT
-    // ========================================================
+    // IMPORTANT:
+    // Salebot expects this exact JSON field:
+    // reels_result
 
     return res.json({
-
-      ok:
-        true,
-
-      reels_result:
-        result
-
+      ok: true,
+      reels_result: result,
     });
 
-
   } catch (error) {
-
     console.error("====================================");
     console.error("GENERATE ERROR");
     console.error("====================================");
 
     console.error(
-      JSON.stringify(
-        formatError(error),
-        null,
-        2
-      )
+      "Message:",
+      error.message
+    );
+
+    console.error(
+      "Status:",
+      error.response?.status
+    );
+
+    console.error(
+      "Response:",
+      error.response?.data
     );
 
     console.error(
       "Total request time:",
-      Date.now() - requestStarted,
+      Date.now() -
+        requestStartTime,
       "ms"
     );
 
-    console.error("====================================");
-
-
     return res.status(500).json({
-
-      ok:
-        false,
-
-      stage:
-        "gigachat",
-
-      error_type:
-        typeof error,
-
-      error_name:
-        error?.name || null,
-
-      error_message:
-        error?.message || String(error),
-
-      error_details:
-        formatError(error)
-
+      ok: false,
+      error:
+        error.response?.data ||
+        error.message ||
+        String(error),
     });
-
   }
-
 });
-
 
 // ============================================================
 // 404
 // ============================================================
 
 app.use((req, res) => {
-
   res.status(404).json({
-
-    ok:
-      false,
-
-    error:
-      "Endpoint not found",
-
-    method:
-      req.method,
-
-    url:
-      req.originalUrl
-
+    ok: false,
+    error: "Endpoint not found",
+    method: req.method,
+    url: req.originalUrl,
   });
-
 });
 
-
 // ============================================================
-// SERVER
+// GLOBAL ERROR HANDLER
 // ============================================================
 
-app.listen(
-  PORT,
-  "0.0.0.0",
-  () => {
-
-    console.log(
-      `Content Constructor Gateway running on port ${PORT}`
+app.use(
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
+    console.error(
+      "GLOBAL ERROR:",
+      error
     );
 
+    if (res.headersSent) {
+      return next(error);
+    }
+
+    res.status(500).json({
+      ok: false,
+      error:
+        error.message ||
+        "Internal server error",
+    });
   }
 );
+
+// ============================================================
+// START SERVER
+// ============================================================
+
+app.listen(PORT, () => {
+  console.log("====================================");
+  console.log(
+    "Content Constructor Gateway running on port",
+    PORT
+  );
+  console.log("====================================");
+});
