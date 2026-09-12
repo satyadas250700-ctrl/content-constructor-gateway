@@ -28,7 +28,6 @@ const OAUTH_URL =
 const CHAT_URL =
   "https://api.giga.chat/v1/chat/completions";
 
-// GigaChat certificates can cause problems in some environments.
 const httpsAgent = new https.Agent({
   rejectUnauthorized: false,
 });
@@ -93,7 +92,6 @@ async function getAccessToken() {
   console.log("GIGACHAT AUTH STARTED");
   console.log("====================================");
 
-  // Reuse cached token when possible.
   if (
     cachedToken &&
     Date.now() < tokenExpiresAt - 30000
@@ -167,6 +165,225 @@ async function getAccessToken() {
 // CONTENT DNA
 // ============================================================
 
+function getContentInstructions(contentType) {
+  const type = cleanText(contentType).toLowerCase();
+
+  // ----------------------------------------------------------
+  // REELS
+  // ----------------------------------------------------------
+
+  if (
+    type.includes("reels") ||
+    type.includes("рилс") ||
+    type.includes("reel")
+  ) {
+    return `
+ФОРМАТ: REELS
+
+Создай готовый сценарий короткого вертикального видео.
+
+Структура:
+
+🔥 ХУК:
+Одна сильная первая фраза, которая заставляет продолжить просмотр.
+
+🎬 СЦЕНАРИЙ:
+
+Кадр 1:
+Что происходит в кадре.
+
+Текст:
+Что говорит автор.
+
+Кадр 2:
+Что происходит в кадре.
+
+Текст:
+Что говорит автор.
+
+Кадр 3:
+Что происходит в кадре.
+
+Текст:
+Что говорит автор.
+
+Кадр 4:
+Что происходит в кадре.
+
+Текст:
+Что говорит автор.
+
+🎯 ФИНАЛ:
+Главный вывод.
+
+📢 CTA:
+Естественный призыв к действию.
+
+💡 ИДЕЯ ДЛЯ СЪЁМКИ:
+Как просто снять этот ролик без сложного оборудования.
+
+Сценарий должен быть динамичным, разговорным и пригодным для реальной съёмки.
+`;
+  }
+
+  // ----------------------------------------------------------
+  // POST
+  // ----------------------------------------------------------
+
+  if (
+    type.includes("пост") ||
+    type.includes("post")
+  ) {
+    return `
+ФОРМАТ: ПОСТ
+
+Создай полностью готовый пост для социальной сети.
+
+Структура:
+
+📝 ЗАГОЛОВОК:
+Короткий и цепляющий заголовок.
+
+🔥 ВСТУПЛЕНИЕ:
+Первые несколько предложений должны заставить человека читать дальше.
+
+📖 ОСНОВНОЙ ТЕКСТ:
+Раскрой тему конкретно и понятно.
+
+Используй:
+- реальные ситуации;
+- конкретные примеры;
+- понятные наблюдения;
+- контраст;
+- практические выводы.
+
+Не превращай текст в лекцию.
+
+🎯 ГЛАВНАЯ МЫСЛЬ:
+Чётко сформулируй основной вывод.
+
+📢 CTA:
+Естественный призыв к действию.
+
+Пост должен быть готов к публикации без дополнительного редактирования.
+`;
+  }
+
+  // ----------------------------------------------------------
+  // CAROUSEL
+  // ----------------------------------------------------------
+
+  if (
+    type.includes("карусел") ||
+    type.includes("carousel")
+  ) {
+    return `
+ФОРМАТ: КАРУСЕЛЬ
+
+Создай полностью готовую структуру карусели.
+
+Используй 7–9 слайдов.
+
+Структура:
+
+🎠 ОБЛОЖКА:
+Главная фраза для первого слайда.
+
+СЛАЙД 1:
+Текст.
+
+СЛАЙД 2:
+Текст.
+
+СЛАЙД 3:
+Текст.
+
+СЛАЙД 4:
+Текст.
+
+СЛАЙД 5:
+Текст.
+
+СЛАЙД 6:
+Текст.
+
+СЛАЙД 7:
+Текст.
+
+При необходимости добавь СЛАЙД 8 и СЛАЙД 9.
+
+🎯 ФИНАЛ:
+Главный вывод.
+
+📢 CTA:
+Что человек должен сделать после просмотра карусели.
+
+Каждый слайд должен быть понятным сам по себе и при этом логично вести к следующему.
+Не перегружай слайды длинными абзацами.
+`;
+  }
+
+  // ----------------------------------------------------------
+  // TELEGRAM
+  // ----------------------------------------------------------
+
+  if (
+    type.includes("telegram") ||
+    type.includes("телеграм") ||
+    type.includes("тг")
+  ) {
+    return `
+ФОРМАТ: TELEGRAM-ПОСТ
+
+Создай готовый пост для Telegram.
+
+Структура:
+
+✈️ ЗАГОЛОВОК:
+Короткий, цепляющий заголовок.
+
+🔥 ПЕРВЫЙ АБЗАЦ:
+Сильное начало, которое вызывает желание читать дальше.
+
+📖 ОСНОВНАЯ ЧАСТЬ:
+Раскрой тему живым разговорным языком.
+
+Можно использовать:
+- короткие абзацы;
+- списки;
+- вопросы;
+- примеры;
+- личные наблюдения;
+- контраст;
+- эмоциональные акценты.
+
+🎯 ГЛАВНАЯ МЫСЛЬ:
+Что читатель должен понять.
+
+📢 CTA:
+Естественный призыв к действию или вопрос аудитории.
+
+Telegram-пост должен выглядеть естественно именно для Telegram, а не как рекламная статья.
+`;
+  }
+
+  // ----------------------------------------------------------
+  // FALLBACK
+  // ----------------------------------------------------------
+
+  return `
+ФОРМАТ КОНТЕНТА: ${contentType}
+
+Создай наиболее подходящий готовый формат контента исходя из указанного типа.
+
+Сохрани профессиональную структуру, сильное начало, основную мысль, вывод и CTA.
+`;
+}
+
+// ============================================================
+// UNIVERSAL PROMPT
+// ============================================================
+
 function buildPrompt(data) {
   const {
     content_type,
@@ -177,189 +394,165 @@ function buildPrompt(data) {
     content_style,
   } = data;
 
+  const contentInstructions =
+    getContentInstructions(content_type);
+
   return `
-Ты — профессиональный контент-стратег, маркетолог, сценарист коротких видео и редактор социальных сетей.
+Ты — профессиональный контент-стратег, маркетолог, сценарист и редактор социальных сетей.
 
-Ты работаешь внутри продукта «МОЙ КОНТЕНТ-КОНСТРУКТОР».
+Ты работаешь внутри продукта:
 
-Твоя задача — создавать контент, который предприниматель или эксперт может практически сразу использовать в социальных сетях.
+«МОЙ КОНТЕНТ-КОНСТРУКТОР»
 
-Главный принцип:
+Твоя задача — создавать контент для предпринимателей и экспертов.
 
-НЕ пиши шаблонный текст ради текста.
+Ты не просто генерируешь текст.
 
-Сначала мысленно определи:
-1. кто говорит;
-2. кому он говорит;
-3. какую проблему или желание аудитории затрагиваем;
-4. зачем создаётся этот контент;
-5. какой угол подачи лучше всего сработает;
-6. какое действие должен совершить зритель после просмотра.
+Ты сначала анализируешь:
 
-Используй предоставленные данные как основу.
+1. Бизнес.
+2. Целевую аудиторию.
+3. Цель публикации.
+4. Тему.
+5. Стиль.
+6. Формат контента.
 
-==============================
-ДАННЫЕ БИЗНЕСА
-==============================
+После этого выбираешь правильный угол подачи и создаёшь готовый материал.
 
-Тип контента:
+==================================================
+ДАННЫЕ ПОЛЬЗОВАТЕЛЯ
+==================================================
+
+ТИП КОНТЕНТА:
 ${content_type}
 
-Бизнес:
+БИЗНЕС:
 ${business_info}
 
-Целевая аудитория:
+ЦЕЛЕВАЯ АУДИТОРИЯ:
 ${target_audience}
 
-Цель контента:
+ЦЕЛЬ КОНТЕНТА:
 ${content_goal}
 
-Тема:
+ТЕМА:
 ${reels_topic}
 
-Стиль:
+СТИЛЬ:
 ${content_style}
 
-==============================
-ОСНОВНЫЕ ПРАВИЛА
-==============================
+==================================================
+ОБЩИЕ ПРАВИЛА
+==================================================
 
 1. Пиши на естественном современном русском языке.
 
-2. Не используй канцелярит.
+2. Контент должен звучать как работа сильного российского контент-маркетолога.
 
-3. Не используй фразы вроде:
+3. Не используй канцелярит.
+
+4. Не используй шаблонные вступления вроде:
+
 «В современном мире»
 «Важно понимать»
 «Стоит отметить»
 «Сегодня я расскажу вам»
 «Давайте разберёмся»
 «Как известно»
-и другие очевидные шаблоны.
+«Ни для кого не секрет»
 
-4. Не начинай ролик с длинного вступления.
+5. Не придумывай факты о бизнесе.
 
-5. Первые секунды должны сразу давать причину продолжить просмотр.
+6. Не придумывай несуществующие акции, цены, отзывы, достижения или результаты.
 
-6. Учитывай конкретную целевую аудиторию.
+7. Используй только информацию, которую можно логично вывести из предоставленных данных.
 
-7. Не придумывай факты о бизнесе, которых нет в исходных данных.
+8. Не перегружай материал информацией.
 
-8. Не обещай невозможных результатов.
+9. Одна единица контента должна иметь одну основную мысль.
 
-9. Если цель — продажи, не превращай ролик в навязчивую рекламу.
+10. Учитывай именно указанную целевую аудиторию.
 
-10. Если цель — экспертность, показывай её через конкретную мысль, пример, объяснение или наблюдение, а не через заявление «я эксперт».
+11. Не обращайся к аудитории слишком общими словами, если можно говорить конкретнее.
 
-11. Если стиль провокационный — допускается резкий, смелый и цепляющий заход, но без бессмысленного оскорбления аудитории.
+12. Цель контента должна влиять на структуру и подачу.
 
-12. Каждый элемент сценария должен выполнять функцию.
+13. Если цель — продажи, не превращай материал в агрессивную рекламу.
 
-==============================
-ДНК REELS
-==============================
+14. Если цель — экспертность, показывай компетентность через конкретные мысли, объяснения, примеры и наблюдения.
 
-Для Reels используй структуру:
+15. Если цель — внимание, делай сильный эмоциональный или интеллектуальный заход.
 
-1. ХУК
+16. Если стиль провокационный, используй смелую подачу, но не превращай её в бессмысленное оскорбление.
 
-Одна сильная первая фраза.
+17. Если стиль спокойный или экспертный, не добавляй искусственную агрессию.
 
-Она должна:
-- вызвать любопытство;
-- обозначить проблему;
-- удивить;
-- бросить вызов распространённому мнению;
-или
-- создать эмоциональное напряжение.
+18. Не повторяй одну и ту же мысль разными словами.
 
-2. ОСНОВНАЯ ЧАСТЬ
+19. Не добавляй пояснения о своей работе.
 
-Развивай одну главную мысль.
+20. Не пиши, что ты искусственный интеллект.
 
-Не пытайся рассказать всё сразу.
+==================================================
+КОНТЕНТ-СТРАТЕГИЯ
+==================================================
 
-Используй конкретику, примеры, контраст или короткую историю.
+Перед написанием мысленно ответь:
 
-3. ФИНАЛ
+- Что действительно волнует эту аудиторию?
+- Почему эта тема должна быть ей интересна?
+- Какую конкретную мысль человек должен унести?
+- Почему он должен дочитать или досмотреть?
+- Какой эмоциональный триггер подходит этому контенту?
+- Какой CTA логично соответствует цели?
 
-Сделай вывод, который логично завершает мысль.
+Не показывай эти рассуждения пользователю.
 
-4. CTA
+==================================================
+ФОРМАТ
+==================================================
 
-Призыв к действию должен соответствовать цели контента.
+${contentInstructions}
 
-CTA не должен выглядеть как навязчивая реклама.
-
-5. ИДЕЯ СЪЁМКИ
-
-Дай простую практическую рекомендацию, как снять ролик.
-
-==============================
-ФОРМАТ ОТВЕТА
-==============================
+==================================================
+ФИНАЛЬНЫЕ ТРЕБОВАНИЯ
+==================================================
 
 Верни ТОЛЬКО готовый контент.
 
-Используй следующую структуру:
+Не добавляй:
 
-🔥 ГОТОВЫЙ СЦЕНАРИЙ REELS
-
-🎯 ХУК:
-[сильная первая фраза]
-
-🎬 СЦЕНАРИЙ:
-
-Кадр 1:
-[что происходит в кадре]
-
-Текст:
-[что говорит автор]
-
-Кадр 2:
-[что происходит в кадре]
-
-Текст:
-[что говорит автор]
-
-Кадр 3:
-[что происходит в кадре]
-
-Текст:
-[что говорит автор]
-
-Кадр 4:
-[что происходит в кадре]
-
-Текст:
-[что говорит автор]
-
-🎯 ФИНАЛ:
-[завершающая мысль]
-
-📢 CTA:
-[призыв к действию]
-
-💡 ИДЕЯ ДЛЯ СЪЁМКИ:
-[как просто снять ролик]
-
-==============================
-ВАЖНО
-==============================
-
-Не добавляй никаких пояснений от себя.
-
-Не пиши:
-«Вот ваш сценарий»
+«Вот ваш контент»
 «Надеюсь, вам понравится»
 «При необходимости могу изменить»
-и подобные фразы.
+«Как искусственный интеллект...»
+«Ниже представлен...»
 
-Сразу выдавай готовый результат.
+Не объясняй, почему ты выбрал такую структуру.
 
-Контент должен ощущаться так, будто его подготовил сильный российский контент-маркетолог, который понимает конкретный бизнес и его аудиторию.
+Сразу начинай с готового материала.
+
+Контент должен быть практически готов к публикации или съёмке.
 `.trim();
 }
+
+// ============================================================
+// ROOT
+// ============================================================
+
+app.get("/", (req, res) => {
+  res.json({
+    ok: true,
+    service: "Content Constructor Gateway",
+    message: "Gateway is working",
+    endpoints: {
+      health: "GET /health",
+      testAuth: "GET /test-auth",
+      testGenerate: "GET /test-generate",
+      generate: "POST /generate",
+    },
+  });
+});
 
 // ============================================================
 // HEALTH
@@ -378,24 +571,6 @@ app.get("/health", (req, res) => {
       : "MISSING",
     model: GIGACHAT_MODEL,
     time: new Date().toISOString(),
-  });
-});
-
-// ============================================================
-// ROOT
-// ============================================================
-
-app.get("/", (req, res) => {
-  res.json({
-    ok: true,
-    service: "Content Constructor Gateway",
-    message: "Gateway is working",
-    endpoints: {
-      health: "GET /health",
-      testAuth: "GET /test-auth",
-      testGenerate: "GET /test-generate",
-      generate: "POST /generate",
-    },
   });
 });
 
@@ -450,7 +625,9 @@ app.get("/test-generate", async (req, res) => {
     const token = await getAccessToken();
 
     console.log("Access token obtained");
-    console.log("Sending test request to GigaChat...");
+    console.log(
+      "Sending test request to GigaChat..."
+    );
 
     const startTime = Date.now();
 
@@ -461,7 +638,8 @@ app.get("/test-generate", async (req, res) => {
         messages: [
           {
             role: "user",
-            content: "Ответь одним словом: Да",
+            content:
+              "Ответь одним словом: Да",
           },
         ],
         temperature: 0.2,
@@ -470,13 +648,15 @@ app.get("/test-generate", async (req, res) => {
       {
         headers: {
           Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
+          "Content-Type":
+            "application/json",
           Accept: "application/json",
         },
       }
     );
 
-    const elapsed = Date.now() - startTime;
+    const elapsed =
+      Date.now() - startTime;
 
     console.log(
       "GigaChat status:",
@@ -499,8 +679,8 @@ app.get("/test-generate", async (req, res) => {
     );
 
     const result =
-      response.data?.choices?.[0]?.message?.content ||
-      "";
+      response.data?.choices?.[0]?.message
+        ?.content || "";
 
     res.json({
       ok: true,
@@ -529,14 +709,17 @@ app.get("/test-generate", async (req, res) => {
 });
 
 // ============================================================
-// MAIN GENERATE ENDPOINT
+// MAIN GENERATE
 // ============================================================
 
 app.post("/generate", async (req, res) => {
-  const requestStartTime = Date.now();
+  const requestStartTime =
+    Date.now();
 
   console.log("====================================");
-  console.log("GENERATE REQUEST RECEIVED");
+  console.log(
+    "GENERATE REQUEST RECEIVED"
+  );
   console.log("====================================");
 
   console.log(
@@ -561,36 +744,52 @@ app.post("/generate", async (req, res) => {
 
   try {
     // ========================================================
-    // GET DATA
+    // VARIABLES FROM SALEBOT
     // ========================================================
 
     const bridge_key =
-      cleanText(req.body?.bridge_key);
+      cleanText(
+        req.body?.bridge_key
+      );
 
     const content_type =
-      cleanText(req.body?.content_type);
+      cleanText(
+        req.body?.content_type
+      );
 
     const business_info =
-      cleanText(req.body?.business_info);
+      cleanText(
+        req.body?.business_info
+      );
 
     const target_audience =
-      cleanText(req.body?.target_audience);
+      cleanText(
+        req.body?.target_audience
+      );
 
     const content_goal =
-      cleanText(req.body?.content_goal);
+      cleanText(
+        req.body?.content_goal
+      );
 
     const reels_topic =
-      cleanText(req.body?.reels_topic);
+      cleanText(
+        req.body?.reels_topic
+      );
 
     const content_style =
-      cleanText(req.body?.content_style);
+      cleanText(
+        req.body?.content_style
+      );
 
     // ========================================================
-    // LOG VARIABLES
+    // LOG SALEBOT VARIABLES
     // ========================================================
 
     console.log("====================================");
-    console.log("SALEBOT VARIABLES");
+    console.log(
+      "SALEBOT VARIABLES"
+    );
     console.log("====================================");
 
     console.log(
@@ -624,7 +823,7 @@ app.post("/generate", async (req, res) => {
     );
 
     // ========================================================
-    // BRIDGE KEY VALIDATION
+    // BRIDGE KEY
     // ========================================================
 
     if (!BRIDGE_KEY) {
@@ -634,7 +833,8 @@ app.post("/generate", async (req, res) => {
 
       return res.status(500).json({
         ok: false,
-        error: "BRIDGE_KEY is not configured",
+        error:
+          "BRIDGE_KEY is not configured",
       });
     }
 
@@ -645,7 +845,8 @@ app.post("/generate", async (req, res) => {
 
       return res.status(401).json({
         ok: false,
-        error: "Bridge key is missing",
+        error:
+          "Bridge key is missing",
       });
     }
 
@@ -656,11 +857,14 @@ app.post("/generate", async (req, res) => {
 
       return res.status(401).json({
         ok: false,
-        error: "Invalid bridge_key",
+        error:
+          "Invalid bridge_key",
       });
     }
 
-    console.log("Bridge key: VALID");
+    console.log(
+      "Bridge key: VALID"
+    );
 
     // ========================================================
     // REQUIRED FIELDS
@@ -669,30 +873,44 @@ app.post("/generate", async (req, res) => {
     const missingFields = [];
 
     if (!content_type) {
-      missingFields.push("content_type");
+      missingFields.push(
+        "content_type"
+      );
     }
 
     if (!business_info) {
-      missingFields.push("business_info");
+      missingFields.push(
+        "business_info"
+      );
     }
 
     if (!target_audience) {
-      missingFields.push("target_audience");
+      missingFields.push(
+        "target_audience"
+      );
     }
 
     if (!content_goal) {
-      missingFields.push("content_goal");
+      missingFields.push(
+        "content_goal"
+      );
     }
 
     if (!reels_topic) {
-      missingFields.push("reels_topic");
+      missingFields.push(
+        "reels_topic"
+      );
     }
 
     if (!content_style) {
-      missingFields.push("content_style");
+      missingFields.push(
+        "content_style"
+      );
     }
 
-    if (missingFields.length > 0) {
+    if (
+      missingFields.length > 0
+    ) {
       console.error(
         "Missing required fields:",
         missingFields
@@ -700,20 +918,23 @@ app.post("/generate", async (req, res) => {
 
       return res.status(400).json({
         ok: false,
-        error: "Missing required fields",
-        fields: missingFields,
+        error:
+          "Missing required fields",
+        fields:
+          missingFields,
       });
     }
 
     // ========================================================
-    // GET GIGACHAT TOKEN
+    // GET TOKEN
     // ========================================================
 
     console.log(
       "Getting GigaChat access token..."
     );
 
-    const token = await getAccessToken();
+    const token =
+      await getAccessToken();
 
     console.log(
       "Access token obtained"
@@ -723,14 +944,15 @@ app.post("/generate", async (req, res) => {
     // BUILD PROMPT
     // ========================================================
 
-    const prompt = buildPrompt({
-      content_type,
-      business_info,
-      target_audience,
-      content_goal,
-      reels_topic,
-      content_style,
-    });
+    const prompt =
+      buildPrompt({
+        content_type,
+        business_info,
+        target_audience,
+        content_goal,
+        reels_topic,
+        content_style,
+      });
 
     console.log(
       "Prompt length:",
@@ -749,37 +971,42 @@ app.post("/generate", async (req, res) => {
     const generationStartTime =
       Date.now();
 
-    const response = await http.post(
-      CHAT_URL,
-      {
-        model: GIGACHAT_MODEL,
+    const response =
+      await http.post(
+        CHAT_URL,
+        {
+          model:
+            GIGACHAT_MODEL,
 
-        messages: [
-          {
-            role: "system",
-            content:
-              "Ты работаешь как профессиональный контент-стратег и сценарист внутри сервиса «МОЙ КОНТЕНТ-КОНСТРУКТОР».",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
+          messages: [
+            {
+              role: "system",
+              content:
+                "Ты работаешь как профессиональный контент-стратег внутри сервиса «МОЙ КОНТЕНТ-КОНСТРУКТОР». Всегда строго соблюдай выбранный пользователем формат контента.",
+            },
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
 
-        temperature: 0.75,
+          temperature: 0.75,
 
-        max_tokens: 1800,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type":
-            "application/json",
-          Accept:
-            "application/json",
+          max_tokens: 1800,
         },
-      }
-    );
+        {
+          headers: {
+            Authorization:
+              `Bearer ${token}`,
+
+            "Content-Type":
+              "application/json",
+
+            Accept:
+              "application/json",
+          },
+        }
+      );
 
     const generationTime =
       Date.now() -
@@ -797,12 +1024,12 @@ app.post("/generate", async (req, res) => {
     );
 
     // ========================================================
-    // EXTRACT RESULT
+    // RESULT
     // ========================================================
 
     const result =
-      response.data?.choices?.[0]?.message?.content ||
-      "";
+      response.data?.choices?.[0]
+        ?.message?.content || "";
 
     if (!result) {
       console.error(
@@ -827,6 +1054,11 @@ app.post("/generate", async (req, res) => {
     console.log("====================================");
 
     console.log(
+      "Content type:",
+      content_type
+    );
+
+    console.log(
       "Result length:",
       result.length,
       "characters"
@@ -839,18 +1071,26 @@ app.post("/generate", async (req, res) => {
       "ms"
     );
 
-    // IMPORTANT:
-    // Salebot expects this exact JSON field:
-    // reels_result
+    // ========================================================
+    // SALEBOT RESPONSE
+    // ========================================================
 
     return res.json({
       ok: true,
+
+      // IMPORTANT:
+      // This field MUST remain reels_result
+      // because Salebot currently saves:
+      // reels_result -> reels_result
+
       reels_result: result,
     });
 
   } catch (error) {
     console.error("====================================");
-    console.error("GENERATE ERROR");
+    console.error(
+      "GENERATE ERROR"
+    );
     console.error("====================================");
 
     console.error(
@@ -892,7 +1132,8 @@ app.post("/generate", async (req, res) => {
 app.use((req, res) => {
   res.status(404).json({
     ok: false,
-    error: "Endpoint not found",
+    error:
+      "Endpoint not found",
     method: req.method,
     url: req.originalUrl,
   });
