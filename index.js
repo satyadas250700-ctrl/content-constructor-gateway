@@ -37,7 +37,7 @@ const httpsAgent = new https.Agent({
 // поэтому не ставим слишком большой таймаут.
 const http = axios.create({
   httpsAgent,
-  timeout: 13000,
+  timeout: 20000,
 });
 
 // ============================================================
