@@ -87,49 +87,31 @@ async function getAccessToken() {
 }
 
 // ============================================================
-// CONTENT INSTRUCTIONS
+// CONTENT TYPE HELPERS
 // ============================================================
 
-function getContentInstructions(contentType) {
-  const type = String(contentType || "").toLowerCase();
+function isContentPlan(contentType) {
+  const type =
+    String(contentType || "").toLowerCase();
 
-  // ----------------------------------------------------------
-  // 30-DAY CONTENT PLAN
-  // ----------------------------------------------------------
-
-  if (
+  return (
     type.includes("контент-план") ||
     type.includes("контент план") ||
     type.includes("30 дней") ||
     type.includes("30дней")
-  ) {
-    return `
-СОЗДАЙ КОНТЕНТ-ПЛАН.
+  );
+}
 
-Для каждого дня укажи:
+// ============================================================
+// NORMAL CONTENT INSTRUCTIONS
+// ============================================================
 
-День N — формат
-Тема: конкретная тема
-Идея: что раскрыть
-CTA: короткий призыв
-
-Не пиши длинные тексты.
-Не пиши готовые сценарии.
-Не объясняй свои решения.
-Не повторяй темы.
-
-Используй форматы:
-Reels
-Пост
-Карусель
-Telegram-пост
-
-Ответ только на русском языке.
-`;
-  }
+function getContentInstructions(contentType) {
+  const type =
+    String(contentType || "").toLowerCase();
 
   // ----------------------------------------------------------
-  // TELEGRAM POST
+  // TELEGRAM
   // ----------------------------------------------------------
 
   if (
@@ -324,74 +306,331 @@ ${instructions}
 }
 
 // ============================================================
-// BUILD 15-DAY TEST PROMPT
+// BUILD 15-DAY CONTENT PLAN PROMPT
 // ============================================================
 
-function buildTestPlanPrompt(startDay, endDay) {
+function buildPlanPartPrompt({
+  startDay,
+  endDay,
+  businessInfo,
+  targetAudience,
+  contentGoal,
+  contentStyle
+}) {
   return `
-Ты — контент-стратег.
+Ты — профессиональный контент-стратег
+для предпринимателей и экспертов.
 
-Создай компактную часть контент-плана
-для предпринимателя.
+Создай часть контент-плана на 30 дней:
+ДНИ ${startDay}–${endDay}.
 
-Нужно создать дни ${startDay}–${endDay}.
+ДАННЫЕ КЛИЕНТА:
 
-Данные бизнеса:
-эксперт или предприниматель, который продаёт
-свои услуги или продукты.
+Бизнес:
+${businessInfo}
 
 Целевая аудитория:
-потенциальные клиенты этого бизнеса.
+${targetAudience}
 
-Цель:
-привлечь внимание, показать экспертность,
-вызвать доверие и привести к покупке.
+Цель контента:
+${contentGoal}
 
 Стиль:
-легко, уверенно, современно.
+${contentStyle}
 
-Используй форматы:
-Reels, Пост, Карусель, Telegram-пост.
+ЗАДАЧА:
 
-Для каждого дня используй только 3 строки:
+Создай отдельную идею контента на каждый день.
 
-День N — формат
+Используй и чередуй форматы:
+- Reels
+- Пост
+- Карусель
+- Telegram-пост
+
+ВАЖНЫЕ ТРЕБОВАНИЯ:
+
+1. Создай ВСЕ дни с ${startDay} по ${endDay}.
+2. Каждый день должен быть конкретным.
+3. Темы должны соответствовать именно этому бизнесу.
+4. Не используй абстрактные универсальные идеи.
+5. Не повторяй одну и ту же тему.
+6. Чередуй форматы.
+7. Учитывай целевую аудиторию.
+8. Учитывай цель контента.
+9. Учитывай выбранный стиль.
+10. Не пиши готовые длинные тексты.
+11. Не пиши сценарии.
+12. Не объясняй свои решения.
+13. Не добавляй вступление или заключение.
+14. Ответ только на русском языке.
+
+ФОРМАТ КАЖДОГО ДНЯ:
+
+День N — Формат
+Тема: конкретная тема публикации
+Идея: что именно показать или раскрыть
+
+Пример структуры:
+
+День 1 — Reels
 Тема: ...
 Идея: ...
 
-Не пиши CTA.
-Не пиши сценарии.
-Не пиши длинные тексты.
-Не объясняй свои решения.
-Не повторяй темы.
+День 2 — Пост
+Тема: ...
+Идея: ...
 
-Создай все дни от ${startDay} до ${endDay}.
+Продолжай до Дня ${endDay}.
 
-Ответ только на русском языке.
+ВЕРНИ ТОЛЬКО КОНТЕНТ-ПЛАН.
 `;
 }
 
 // ============================================================
-// HEALTH
+// GIGACHAT REQUEST
 // ============================================================
 
-app.get("/", (req, res) => {
-  res.json({
-    ok: true,
-    service: "content-constructor-gateway",
-    status: "running"
-  });
-});
+async function generateWithGigaChat({
+  token,
+  prompt,
+  temperature,
+  maxTokens,
+  label
+}) {
+  const startedAt = Date.now();
 
-app.get("/health", (req, res) => {
-  res.json({
-    ok: true,
-    service: "content-constructor-gateway",
-    gigachat_key_configured: !!GIGACHAT_KEY,
-    bridge_key_configured: !!BRIDGE_KEY,
-    model: GIGACHAT_MODEL
-  });
-});
+  console.log(
+    `[${label}] Sending request to GigaChat...`
+  );
+
+  try {
+    const response = await axios.post(
+      CHAT_URL,
+      {
+        model: GIGACHAT_MODEL,
+
+        messages: [
+          {
+            role: "system",
+            content:
+              "Ты профессиональный контент-маркетолог и контент-стратег. Создавай только качественный готовый контент на русском языке."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+
+        temperature,
+        max_tokens: maxTokens
+      },
+      {
+        httpsAgent,
+
+        // Не увеличиваем этот timeout:
+        // Salebot также имеет ограниченное время ожидания.
+        timeout: 12000,
+
+        headers: {
+          Authorization:
+            `Bearer ${token}`,
+
+          "Content-Type":
+            "application/json"
+        }
+      }
+    );
+
+    const result =
+      response.data?.choices?.[0]?.message?.content ||
+      "";
+
+    const elapsed =
+      Date.now() - startedAt;
+
+    console.log(
+      `[${label}] HTTP status: ${response.status}`
+    );
+
+    console.log(
+      `[${label}] Result length: ${result.length}`
+    );
+
+    console.log(
+      `[${label}] Time: ${elapsed} ms`
+    );
+
+    if (!result) {
+      throw new Error(
+        `${label}: GigaChat returned empty result`
+      );
+    }
+
+    return {
+      result,
+      elapsed,
+      status: response.status
+    };
+
+  } catch (error) {
+    const elapsed =
+      Date.now() - startedAt;
+
+    console.error(
+      `[${label}] ERROR`
+    );
+
+    console.error(
+      `[${label}] Message:`,
+      error.message
+    );
+
+    console.error(
+      `[${label}] Status:`,
+      error.response?.status
+    );
+
+    console.error(
+      `[${label}] Response:`,
+      error.response?.data
+    );
+
+    console.error(
+      `[${label}] Time:`,
+      elapsed,
+      "ms"
+    );
+
+    throw error;
+  }
+}
+
+// ============================================================
+// GENERATE 30-DAY PLAN
+// ============================================================
+
+async function generateContentPlan({
+  token,
+  businessInfo,
+  targetAudience,
+  contentGoal,
+  contentStyle
+}) {
+  const startedAt = Date.now();
+
+  console.log("");
+  console.log(
+    "===================================="
+  );
+  console.log(
+    "STARTING PARALLEL 30-DAY PLAN"
+  );
+  console.log(
+    "===================================="
+  );
+
+  // ----------------------------------------------------------
+  // BUILD TWO PROMPTS
+  // ----------------------------------------------------------
+
+  const prompt1 =
+    buildPlanPartPrompt({
+      startDay: 1,
+      endDay: 15,
+      businessInfo,
+      targetAudience,
+      contentGoal,
+      contentStyle
+    });
+
+  const prompt2 =
+    buildPlanPartPrompt({
+      startDay: 16,
+      endDay: 30,
+      businessInfo,
+      targetAudience,
+      contentGoal,
+      contentStyle
+    });
+
+  // ----------------------------------------------------------
+  // START BOTH REQUESTS AT THE SAME TIME
+  // ----------------------------------------------------------
+
+  console.log(
+    "Starting days 1–15 and 16–30 in parallel..."
+  );
+
+  const [part1, part2] =
+    await Promise.all([
+      generateWithGigaChat({
+        token,
+        prompt: prompt1,
+        temperature: 0.45,
+        maxTokens: 750,
+        label: "DAYS 1-15"
+      }),
+
+      generateWithGigaChat({
+        token,
+        prompt: prompt2,
+        temperature: 0.45,
+        maxTokens: 750,
+        label: "DAYS 16-30"
+      })
+    ]);
+
+  // ----------------------------------------------------------
+  // COMBINE
+  // ----------------------------------------------------------
+
+  const combinedResult =
+    `${part1.result.trim()}\n\n${part2.result.trim()}`;
+
+  const totalTime =
+    Date.now() - startedAt;
+
+  console.log("");
+  console.log(
+    "===================================="
+  );
+  console.log(
+    "30-DAY PLAN SUCCESS"
+  );
+  console.log(
+    "===================================="
+  );
+
+  console.log(
+    "Days 1-15 time:",
+    part1.elapsed,
+    "ms"
+  );
+
+  console.log(
+    "Days 16-30 time:",
+    part2.elapsed,
+    "ms"
+  );
+
+  console.log(
+    "Combined result length:",
+    combinedResult.length
+  );
+
+  console.log(
+    "Total parallel time:",
+    totalTime,
+    "ms"
+  );
+
+  console.log(
+    "===================================="
+  );
+
+  return combinedResult;
+}
 
 // ============================================================
 // TEST AUTH
@@ -399,16 +638,21 @@ app.get("/health", (req, res) => {
 
 app.get("/test-auth", async (req, res) => {
   try {
-    const token = await getAccessToken();
+    const token =
+      await getAccessToken();
 
     res.json({
       ok: true,
       stage: "auth",
       token_received: !!token
     });
+
   } catch (error) {
-    console.error("AUTH ERROR");
-    console.error(error.message);
+
+    console.error(
+      "AUTH ERROR:",
+      error.message
+    );
 
     res.status(500).json({
       ok: false,
@@ -423,202 +667,61 @@ app.get("/test-auth", async (req, res) => {
 // ============================================================
 
 app.get("/test-generate", async (req, res) => {
+  const startedAt = Date.now();
+
   try {
-    const startedAt = Date.now();
+    const token =
+      await getAccessToken();
 
-    const token = await getAccessToken();
+    const response =
+      await axios.post(
+        CHAT_URL,
+        {
+          model: GIGACHAT_MODEL,
 
-    const response = await axios.post(
-      CHAT_URL,
-      {
-        model: GIGACHAT_MODEL,
+          messages: [
+            {
+              role: "user",
+              content:
+                "Ответь одним словом: Да"
+            }
+          ],
 
-        messages: [
-          {
-            role: "user",
-            content: "Ответь одним словом: Да"
+          temperature: 0.2,
+          max_tokens: 10
+        },
+        {
+          httpsAgent,
+          timeout: 12000,
+
+          headers: {
+            Authorization:
+              `Bearer ${token}`,
+
+            "Content-Type":
+              "application/json"
           }
-        ],
-
-        temperature: 0.2,
-        max_tokens: 10
-      },
-      {
-        httpsAgent,
-        timeout: 12000,
-
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
         }
-      }
-    );
+      );
 
     const result =
       response.data?.choices?.[0]?.message?.content ||
       "";
 
-    const totalTime =
-      Date.now() - startedAt;
-
-    console.log(
-      "TEST GENERATE TIME:",
-      totalTime,
-      "ms"
-    );
-
     res.json({
       ok: true,
       stage: "generation",
       status: response.status,
-      time_ms: totalTime,
+      time_ms:
+        Date.now() - startedAt,
       response: response.data,
       reels_result: result
     });
 
   } catch (error) {
-    console.error("TEST GENERATE ERROR");
-    console.error("Message:", error.message);
-    console.error(
-      "Status:",
-      error.response?.status
-    );
-    console.error(
-      "Response:",
-      error.response?.data
-    );
-
-    res.status(500).json({
-      ok: false,
-      stage: "generation",
-      message: error.message,
-      status: error.response?.status,
-      response: error.response?.data
-    });
-  }
-});
-
-// ============================================================
-// TEST 15-DAY PLAN
-// ============================================================
-
-app.get("/test-plan", async (req, res) => {
-  const startedAt = Date.now();
-
-  console.log("");
-  console.log("====================================");
-  console.log("TEST 15-DAY PLAN");
-  console.log("====================================");
-
-  try {
-    // --------------------------------------------------------
-    // TOKEN
-    // --------------------------------------------------------
-
-    console.log("Getting GigaChat token...");
-
-    const token = await getAccessToken();
-
-    console.log("OAuth token received");
-
-    // --------------------------------------------------------
-    // PROMPT
-    // --------------------------------------------------------
-
-    const prompt =
-      buildTestPlanPrompt(1, 15);
-
-    console.log(
-      "Sending 15-day test request..."
-    );
-
-    // --------------------------------------------------------
-    // REQUEST
-    // --------------------------------------------------------
-
-    const response = await axios.post(
-      CHAT_URL,
-      {
-        model: GIGACHAT_MODEL,
-
-        messages: [
-          {
-            role: "system",
-            content:
-              "Ты профессиональный контент-стратег. Пиши кратко и конкретно."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-
-        temperature: 0.4,
-
-        // Небольшой лимит специально
-        // для измерения скорости
-        max_tokens: 750
-      },
-      {
-        httpsAgent,
-
-        timeout: 12000,
-
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
-
-    const result =
-      response.data?.choices?.[0]?.message?.content ||
-      "";
-
-    const totalTime =
-      Date.now() - startedAt;
-
-    console.log(
-      "GigaChat HTTP status:",
-      response.status
-    );
-
-    console.log(
-      "Result length:",
-      result.length
-    );
-
-    console.log(
-      "Total request time:",
-      totalTime,
-      "ms"
-    );
-
-    console.log(
-      "TEST 15-DAY PLAN SUCCESS"
-    );
-
-    console.log(
-      "===================================="
-    );
-
-    res.json({
-      ok: true,
-      test: "15-day-plan",
-      status: response.status,
-      time_ms: totalTime,
-      result_length: result.length,
-      model: GIGACHAT_MODEL,
-      reels_result: result
-    });
-
-  } catch (error) {
-
-    const totalTime =
-      Date.now() - startedAt;
 
     console.error(
-      "TEST 15-DAY PLAN ERROR"
+      "TEST GENERATE ERROR"
     );
 
     console.error(
@@ -636,15 +739,73 @@ app.get("/test-plan", async (req, res) => {
       error.response?.data
     );
 
-    console.error(
-      "Total request time:",
-      totalTime,
-      "ms"
-    );
+    res.status(500).json({
+      ok: false,
+      stage: "generation",
+      message: error.message,
+      status: error.response?.status,
+      response: error.response?.data,
+      time_ms:
+        Date.now() - startedAt
+    });
+  }
+});
 
-    console.error(
-      "===================================="
-    );
+// ============================================================
+// TEST 15-DAY PLAN
+// ============================================================
+
+app.get("/test-plan", async (req, res) => {
+  const startedAt = Date.now();
+
+  try {
+
+    const token =
+      await getAccessToken();
+
+    const prompt =
+      buildPlanPartPrompt({
+        startDay: 1,
+        endDay: 15,
+
+        businessInfo:
+          "эксперт или предприниматель, который продаёт свои услуги или продукты",
+
+        targetAudience:
+          "потенциальные клиенты этого бизнеса",
+
+        contentGoal:
+          "привлечь внимание, показать экспертность, вызвать доверие и привести к покупке",
+
+        contentStyle:
+          "легко, уверенно, современно"
+      });
+
+    const result =
+      await generateWithGigaChat({
+        token,
+        prompt,
+
+        temperature: 0.4,
+
+        maxTokens: 750,
+
+        label: "TEST 15-DAY PLAN"
+      });
+
+    res.json({
+      ok: true,
+      test: "15-day-plan",
+      status: result.status,
+      time_ms:
+        Date.now() - startedAt,
+      result_length:
+        result.result.length,
+      model: GIGACHAT_MODEL,
+      reels_result: result.result
+    });
+
+  } catch (error) {
 
     res.status(500).json({
       ok: false,
@@ -652,7 +813,8 @@ app.get("/test-plan", async (req, res) => {
       message: error.message,
       status: error.response?.status,
       response: error.response?.data,
-      time_ms: totalTime
+      time_ms:
+        Date.now() - startedAt
     });
   }
 });
@@ -665,9 +827,15 @@ app.post("/generate", async (req, res) => {
   const startedAt = Date.now();
 
   console.log("");
-  console.log("====================================");
-  console.log("GENERATE REQUEST RECEIVED");
-  console.log("====================================");
+  console.log(
+    "===================================="
+  );
+  console.log(
+    "GENERATE REQUEST RECEIVED"
+  );
+  console.log(
+    "===================================="
+  );
 
   try {
 
@@ -700,62 +868,54 @@ app.post("/generate", async (req, res) => {
     // --------------------------------------------------------
 
     if (!bridge_key) {
+
       console.log(
         "ERROR: bridge_key missing"
       );
 
       return res.status(401).json({
         ok: false,
-        error: "bridge_key is required"
+        error:
+          "bridge_key is required"
       });
     }
 
     if (!BRIDGE_KEY) {
+
       console.log(
         "ERROR: BRIDGE_KEY not configured"
       );
 
       return res.status(500).json({
         ok: false,
-        error: "BRIDGE_KEY is not configured"
+        error:
+          "BRIDGE_KEY is not configured"
       });
     }
 
     if (bridge_key !== BRIDGE_KEY) {
+
       console.log(
         "ERROR: invalid bridge_key"
       );
 
       return res.status(401).json({
         ok: false,
-        error: "Invalid bridge_key"
+        error:
+          "Invalid bridge_key"
       });
     }
 
     // --------------------------------------------------------
-    // DETECT CONTENT PLAN
+    // CONTENT PLAN?
     // --------------------------------------------------------
 
-    const normalizedContentType =
-      String(content_type || "").toLowerCase();
-
-    const isContentPlan =
-      normalizedContentType.includes(
-        "контент-план"
-      ) ||
-      normalizedContentType.includes(
-        "контент план"
-      ) ||
-      normalizedContentType.includes(
-        "30 дней"
-      ) ||
-      normalizedContentType.includes(
-        "30дней"
-      );
+    const planRequest =
+      isContentPlan(content_type);
 
     console.log(
       "Content plan:",
-      isContentPlan
+      planRequest
     );
 
     // --------------------------------------------------------
@@ -763,44 +923,56 @@ app.post("/generate", async (req, res) => {
     // --------------------------------------------------------
 
     if (!content_type) {
+
       return res.status(400).json({
         ok: false,
-        error: "content_type is required"
+        error:
+          "content_type is required"
       });
     }
 
     if (!business_info) {
+
       return res.status(400).json({
         ok: false,
-        error: "business_info is required"
+        error:
+          "business_info is required"
       });
     }
 
     if (!target_audience) {
+
       return res.status(400).json({
         ok: false,
-        error: "target_audience is required"
+        error:
+          "target_audience is required"
       });
     }
 
     if (!content_goal) {
+
       return res.status(400).json({
         ok: false,
-        error: "content_goal is required"
+        error:
+          "content_goal is required"
       });
     }
 
     if (!content_style) {
+
       return res.status(400).json({
         ok: false,
-        error: "content_style is required"
+        error:
+          "content_style is required"
       });
     }
 
-    if (!isContentPlan && !reels_topic) {
+    if (!planRequest && !reels_topic) {
+
       return res.status(400).json({
         ok: false,
-        error: "reels_topic is required"
+        error:
+          "reels_topic is required"
       });
     }
 
@@ -828,7 +1000,8 @@ app.post("/generate", async (req, res) => {
       content_style
     );
 
-    if (!isContentPlan) {
+    if (!planRequest) {
+
       console.log(
         "Reels topic:",
         reels_topic
@@ -850,142 +1023,98 @@ app.post("/generate", async (req, res) => {
       "OAuth token received"
     );
 
-    // --------------------------------------------------------
-    // PROMPT
-    // --------------------------------------------------------
+    // ========================================================
+    // CONTENT PLAN
+    // ========================================================
+
+    if (planRequest) {
+
+      const result =
+        await generateContentPlan({
+          token,
+
+          businessInfo:
+            business_info,
+
+          targetAudience:
+            target_audience,
+
+          contentGoal:
+            content_goal,
+
+          contentStyle:
+            content_style
+        });
+
+      const totalTime =
+        Date.now() - startedAt;
+
+      console.log(
+        "Final total request time:",
+        totalTime,
+        "ms"
+      );
+
+      console.log(
+        "Returning 30-day plan to Salebot"
+      );
+
+      return res.json({
+        ok: true,
+        reels_result: result
+      });
+    }
+
+    // ========================================================
+    // STANDARD CONTENT
+    // ========================================================
 
     const prompt =
       buildPrompt({
-        contentType: content_type,
-        businessInfo: business_info,
-        targetAudience: target_audience,
-        contentGoal: content_goal,
-        reelsTopic: reels_topic,
-        contentStyle: content_style
+        contentType:
+          content_type,
+
+        businessInfo:
+          business_info,
+
+        targetAudience:
+          target_audience,
+
+        contentGoal:
+          content_goal,
+
+        reelsTopic:
+          reels_topic,
+
+        contentStyle:
+          content_style
       });
 
-    // --------------------------------------------------------
-    // SETTINGS
-    // --------------------------------------------------------
-
-    let temperature;
-    let maxTokens;
-
-    if (isContentPlan) {
-
-      temperature = 0.45;
-
-      maxTokens = 1400;
-
-      console.log(
-        "Using optimized content-plan settings"
-      );
-
-    } else {
-
-      temperature = 0.75;
-
-      maxTokens = 1800;
-
-      console.log(
-        "Using standard content settings"
-      );
-    }
-
-    // --------------------------------------------------------
-    // GIGACHAT
-    // --------------------------------------------------------
-
     console.log(
-      "Sending request to GigaChat..."
+      "Using standard content generation"
     );
 
-    const response =
-      await axios.post(
-        CHAT_URL,
+    const generated =
+      await generateWithGigaChat({
+        token,
 
-        {
-          model: GIGACHAT_MODEL,
+        prompt,
 
-          messages: [
-            {
-              role: "system",
-              content:
-                "Ты профессиональный контент-маркетолог, контент-стратег и сценарист. Создавай только качественный готовый контент на русском языке."
-            },
-            {
-              role: "user",
-              content: prompt
-            }
-          ],
+        temperature: 0.75,
 
-          temperature,
+        maxTokens: 1800,
 
-          max_tokens: maxTokens
-        },
-
-        {
-          httpsAgent,
-
-          timeout: 12000,
-
-          headers: {
-            Authorization:
-              `Bearer ${token}`,
-
-            "Content-Type":
-              "application/json"
-          }
-        }
-      );
-
-    // --------------------------------------------------------
-    // RESULT
-    // --------------------------------------------------------
-
-    const result =
-      response.data?.choices?.[0]?.message?.content ||
-      "";
+        label: "STANDARD CONTENT"
+      });
 
     const totalTime =
       Date.now() - startedAt;
-
-    console.log(
-      "GigaChat HTTP status:",
-      response.status
-    );
-
-    console.log(
-      "Result length:",
-      result.length
-    );
 
     console.log(
       "Total request time:",
       totalTime,
       "ms"
     );
-
-    // --------------------------------------------------------
-    // EMPTY RESULT
-    // --------------------------------------------------------
-
-    if (!result) {
-
-      console.log(
-        "ERROR: Empty GigaChat result"
-      );
-
-      return res.status(500).json({
-        ok: false,
-        error:
-          "GigaChat returned empty result"
-      });
-    }
-
-    // --------------------------------------------------------
-    // SUCCESS
-    // --------------------------------------------------------
 
     console.log(
       "GENERATION SUCCESS"
@@ -997,7 +1126,8 @@ app.post("/generate", async (req, res) => {
 
     return res.json({
       ok: true,
-      reels_result: result
+      reels_result:
+        generated.result
     });
 
   } catch (error) {
@@ -1043,8 +1173,10 @@ app.post("/generate", async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: error.message,
-      status: error.response?.status,
-      response: error.response?.data
+      status:
+        error.response?.status,
+      response:
+        error.response?.data
     });
   }
 });
@@ -1054,14 +1186,16 @@ app.post("/generate", async (req, res) => {
 // ============================================================
 
 app.use((req, res) => {
+
   res.status(404).json({
     ok: false,
-    error: "Endpoint not found"
+    error:
+      "Endpoint not found"
   });
 });
 
 // ============================================================
-// START SERVER
+// SERVER START
 // ============================================================
 
 app.listen(PORT, () => {
