@@ -44,7 +44,7 @@ let accessToken = null;
 let tokenExpiresAt = 0;
 
 // ============================================================
-// PLAN GENERATION LOCK
+// GENERATION LOCK
 // ============================================================
 
 let generationInProgress = false;
@@ -54,17 +54,12 @@ let generationInProgress = false;
 // ============================================================
 
 async function getAccessToken() {
-  if (
-    accessToken &&
-    Date.now() < tokenExpiresAt
-  ) {
+  if (accessToken && Date.now() < tokenExpiresAt) {
     return accessToken;
   }
 
   if (!GIGACHAT_KEY) {
-    throw new Error(
-      "GIGACHAT_KEY is not configured"
-    );
+    throw new Error("GIGACHAT_KEY is not configured");
   }
 
   const rqUid = crypto.randomUUID();
@@ -76,42 +71,34 @@ async function getAccessToken() {
     }).toString(),
     {
       httpsAgent,
-
-      timeout: 7000,
-
+      timeout: 8000,
       headers: {
-        Authorization:
-          `Basic ${GIGACHAT_KEY}`,
-
+        Authorization: `Basic ${GIGACHAT_KEY}`,
         RqUID: rqUid,
-
         "Content-Type":
           "application/x-www-form-urlencoded"
       }
     }
   );
 
-  accessToken =
-    response.data.access_token;
+  accessToken = response.data.access_token;
 
   const expiresIn =
     Number(response.data.expires_in) || 1800;
 
   tokenExpiresAt =
-    Date.now() +
-    (expiresIn - 60) * 1000;
+    Date.now() + (expiresIn - 60) * 1000;
 
   return accessToken;
 }
 
 // ============================================================
-// CONTENT TYPE CHECK
+// CONTENT TYPE HELPERS
 // ============================================================
 
 function isContentPlan(contentType) {
   const type =
-    String(contentType || "")
-      .toLowerCase();
+    String(contentType || "").toLowerCase();
 
   return (
     type.includes("контент-план") ||
@@ -127,8 +114,7 @@ function isContentPlan(contentType) {
 
 function getContentInstructions(contentType) {
   const type =
-    String(contentType || "")
-      .toLowerCase();
+    String(contentType || "").toLowerCase();
 
   // ----------------------------------------------------------
   // TELEGRAM
@@ -151,6 +137,7 @@ function getContentInstructions(contentType) {
 - соответствовать выбранному стилю.
 
 Структура:
+
 1. Сильное начало.
 2. Основная мысль.
 3. Полезное содержание.
@@ -204,6 +191,7 @@ CTA:
 СОЗДАЙ ГОТОВЫЙ ПОСТ ДЛЯ СОЦИАЛЬНЫХ СЕТЕЙ.
 
 Требования:
+
 - сильное начало;
 - интересная основная часть;
 - конкретная польза;
@@ -252,7 +240,9 @@ CTA:
 Создай качественный готовый контент
 для предпринимателя или эксперта.
 
-Учитывай бизнес,
+Учитывай:
+
+бизнес,
 целевую аудиторию,
 цель,
 тему и стиль.
@@ -326,93 +316,103 @@ ${instructions}
 }
 
 // ============================================================
-// BUILD FAST 15-DAY PLAN PROMPT
+// BUILD 5-DAY CONTENT PLAN PROMPT
 // ============================================================
 
-function buildPlanPartPrompt({
+function buildPlanChunkPrompt({
   startDay,
   endDay,
   businessInfo,
   targetAudience,
   contentGoal,
   contentStyle,
-  previousPlan = ""
+  previousPlan
 }) {
+  const contextBlock = previousPlan
+    ? `
+ПРЕДЫДУЩАЯ ЧАСТЬ ПЛАНА:
 
-  const previousContext =
-    previousPlan
-      ? `
-ПЕРВЫЕ 15 ДНЕЙ УЖЕ СОЗДАНЫ.
-Не повторяй их темы и форматы.
-
-ПРЕДЫДУЩИЙ ПЛАН:
 ${previousPlan}
+
+Используй её как контекст.
+
+Не повторяй темы и идеи.
+Продолжай общую логику контент-воронки.
 `
-      : "";
+    : `
+Это начало контент-плана.
+
+Построй первые дни так, чтобы человек постепенно
+переходил от внимания к интересу и доверию.
+`;
 
   return `
-Ты — сильный контент-стратег
+Ты — профессиональный контент-стратег
 для предпринимателей и экспертов.
 
-Создай дни ${startDay}–${endDay}
-единого контент-плана на 30 дней.
+Создай часть единого контент-плана на 30 дней.
 
-БИЗНЕС:
+ТОЛЬКО ДНИ ${startDay}–${endDay}.
+
+ДАННЫЕ КЛИЕНТА:
+
+Бизнес:
 ${businessInfo}
 
-ЦЕЛЕВАЯ АУДИТОРИЯ:
+Целевая аудитория:
 ${targetAudience}
 
-ЦЕЛЬ:
+Цель контента:
 ${contentGoal}
 
-СТИЛЬ:
+Стиль:
 ${contentStyle}
 
-${previousContext}
+${contextBlock}
 
-ЛОГИКА КОНТЕНТА:
+ЛОГИКА ПЛАНА:
 
-Двигай аудиторию по этапам:
-внимание → интерес → экспертность →
-доверие → желание → действие.
+Постепенно веди аудиторию по пути:
 
-Чередуй форматы:
-Reels → Пост → Карусель → Telegram-пост.
+внимание → интерес → экспертность → доверие → желание → действие.
 
-ВАЖНО:
+Используй и чередуй форматы:
 
-- Создай ВСЕ дни от ${startDay} до ${endDay}.
-- Не повторяй темы.
-- Не повторяй форматы подряд слишком часто.
-- Каждая идея должна быть конкретной.
-- Идеи должны подходить именно этому бизнесу.
-- Не пиши готовые длинные тексты.
-- Не пиши сценарии.
-- Не объясняй решения.
-- Только русский язык.
+- Reels
+- Пост
+- Карусель
+- Telegram-пост
+
+ТРЕБОВАНИЯ:
+
+1. Создай ВСЕ дни с ${startDay} по ${endDay}.
+2. Каждый день должен быть конкретным.
+3. Темы должны соответствовать именно этому бизнесу.
+4. Не используй абстрактные универсальные идеи.
+5. Не повторяй темы и идеи из предыдущей части.
+6. Чередуй форматы.
+7. Учитывай целевую аудиторию.
+8. Учитывай цель контента.
+9. Учитывай стиль.
+10. Не пиши длинные готовые тексты.
+11. Не пиши полный сценарий.
+12. Не объясняй свои решения.
+13. Не добавляй вступление или заключение.
+14. Ответ только на русском языке.
 
 ФОРМАТ:
 
-День 1 — Reels
-Тема: ...
-Идея: ...
-Задача: ...
-CTA: ...
+День N — Формат
+Тема: конкретная тема
+Идея: что именно показать или раскрыть
+Задача: какую реакцию или действие должна вызвать публикация
+CTA: конкретный призыв к действию
 
-День 2 — Пост
-Тема: ...
-Идея: ...
-Задача: ...
-CTA: ...
+Каждый пункт — короткий, но содержательный.
 
-Продолжай до Дня ${endDay}.
+Не используй одинаковые CTA каждый день.
 
-ВАЖНО:
-Пиши максимально кратко.
-Каждый пункт — 1 короткое предложение.
-
-Верни только план.
+ВЕРНИ ТОЛЬКО КОНТЕНТ-ПЛАН.
 `;
 }
 
@@ -425,102 +425,86 @@ async function generateWithGigaChat({
   prompt,
   temperature,
   maxTokens,
-  label,
-  timeout = 9000
+  label
 }) {
-
   const startedAt = Date.now();
 
-  console.log("");
   console.log(
     `[${label}] Sending request to GigaChat...`
   );
 
   try {
+    const response = await axios.post(
+      CHAT_URL,
+      {
+        model: GIGACHAT_MODEL,
 
-    const response =
-      await axios.post(
-        CHAT_URL,
-
-        {
-          model: GIGACHAT_MODEL,
-
-          messages: [
-            {
-              role: "system",
-              content:
-                "Ты профессиональный контент-маркетолог и контент-стратег. Отвечай кратко, конкретно и только на русском языке."
-            },
-            {
-              role: "user",
-              content: prompt
-            }
-          ],
-
-          temperature,
-
-          max_tokens: maxTokens
-        },
-
-        {
-          httpsAgent,
-
-          timeout,
-
-          headers: {
-            Authorization:
-              `Bearer ${token}`,
-
-            "Content-Type":
-              "application/json"
+        messages: [
+          {
+            role: "system",
+            content:
+              "Ты профессиональный контент-маркетолог и контент-стратег. Создавай только качественный готовый контент на русском языке."
+          },
+          {
+            role: "user",
+            content: prompt
           }
+        ],
+
+        temperature,
+        max_tokens: maxTokens
+      },
+      {
+        httpsAgent,
+
+        // Оставляем запас до таймаута Salebot.
+        timeout: 9000,
+
+        headers: {
+          Authorization:
+            `Bearer ${token}`,
+
+          "Content-Type":
+            "application/json"
         }
-      );
+      }
+    );
 
     const result =
-      response.data
-        ?.choices
-        ?.[0]
-        ?.message
-        ?.content || "";
+      response.data?.choices?.[0]?.message?.content ||
+      "";
 
     const elapsed =
       Date.now() - startedAt;
 
     console.log(
-      `[${label}] HTTP status:`,
-      response.status
+      `[${label}] HTTP status: ${response.status}`
     );
 
     console.log(
-      `[${label}] Result length:`,
-      result.length
+      `[${label}] Result length: ${result.length}`
     );
 
     console.log(
-      `[${label}] Time:`,
-      elapsed,
-      "ms"
+      `[${label}] Time: ${elapsed} ms`
     );
 
-    if (!result.trim()) {
+    if (!result) {
       throw new Error(
         `${label}: GigaChat returned empty result`
       );
     }
 
     return {
-      result: result.trim(),
+      result,
       elapsed,
       status: response.status
     };
 
   } catch (error) {
-
     const elapsed =
       Date.now() - startedAt;
 
-    console.error("");
     console.error(
       `[${label}] ERROR`
     );
@@ -551,70 +535,72 @@ async function generateWithGigaChat({
 }
 
 // ============================================================
-// GENERATE FIRST 15 DAYS
+// VALIDATE PLAN DATA
 // ============================================================
 
-async function generateFirst15Days({
-  token,
-  businessInfo,
-  targetAudience,
-  contentGoal,
-  contentStyle
+function validatePlanData({
+  bridge_key,
+  business_info,
+  target_audience,
+  content_goal,
+  content_style
 }) {
+  if (!bridge_key) {
+    return "bridge_key is required";
+  }
 
-  const prompt =
-    buildPlanPartPrompt({
-      startDay: 1,
-      endDay: 15,
-      businessInfo,
-      targetAudience,
-      contentGoal,
-      contentStyle
-    });
+  if (!BRIDGE_KEY) {
+    return "BRIDGE_KEY is not configured";
+  }
 
-  return await generateWithGigaChat({
-    token,
-    prompt,
+  if (bridge_key !== BRIDGE_KEY) {
+    return "Invalid bridge_key";
+  }
 
-    // Низкая температура = быстрее
-    // и меньше лишнего текста.
-    temperature: 0.3,
+  if (!business_info) {
+    return "business_info is required";
+  }
 
-    // Критически важно для Salebot:
-    // короткий ответ.
-    maxTokens: 650,
+  if (!target_audience) {
+    return "target_audience is required";
+  }
 
-    label: "FIRST 15 DAYS",
+  if (!content_goal) {
+    return "content_goal is required";
+  }
 
-    // Оставляем запас времени
-    // до таймаута Salebot.
-    timeout: 9000
-  });
+  if (!content_style) {
+    return "content_style is required";
+  }
+
+  return null;
 }
 
 // ============================================================
-// GENERATE NEXT 15 DAYS
+// GENERATE ONE 5-DAY CHUNK
 // ============================================================
 
-async function generateNext15Days({
-  token,
+async function generatePlanChunk({
+  startDay,
+  endDay,
   businessInfo,
   targetAudience,
   contentGoal,
   contentStyle,
-  previousPlan
+  previousPlan,
+  label
 }) {
+  const token =
+    await getAccessToken();
 
   const prompt =
-    buildPlanPartPrompt({
-      startDay: 16,
-      endDay: 30,
-
+    buildPlanChunkPrompt({
+      startDay,
+      endDay,
       businessInfo,
       targetAudience,
       contentGoal,
       contentStyle,
-
       previousPlan
     });
 
@@ -622,417 +608,550 @@ async function generateNext15Days({
     token,
     prompt,
 
-    temperature: 0.3,
+    temperature: 0.35,
 
-    maxTokens: 650,
+    maxTokens: 550,
 
-    label: "NEXT 15 DAYS",
-
-    timeout: 9000
+    label
   });
 }
+
+// ============================================================
+// GENERIC PLAN CHUNK HANDLER
+// ============================================================
+
+async function handlePlanChunk(
+  req,
+  res,
+  startDay,
+  endDay
+) {
+  const startedAt = Date.now();
+
+  console.log("");
+  console.log("====================================");
+  console.log(
+    `PLAN CHUNK REQUEST: ${startDay}-${endDay}`
+  );
+  console.log("====================================");
+
+  if (generationInProgress) {
+    return res.status(429).json({
+      ok: false,
+      error:
+        "Generation already in progress. Please try again later."
+    });
+  }
+
+  const {
+    bridge_key,
+    business_info,
+    target_audience,
+    content_goal,
+    content_style,
+    previous_plan
+  } = req.body || {};
+
+  const validationError =
+    validatePlanData({
+      bridge_key,
+      business_info,
+      target_audience,
+      content_goal,
+      content_style
+    });
+
+  if (validationError) {
+    const status =
+      validationError === "Invalid bridge_key" ||
+      validationError === "bridge_key is required"
+        ? 401
+        : 400;
+
+    return res.status(status).json({
+      ok: false,
+      error: validationError
+    });
+  }
+
+  // Ограничиваем размер предыдущего контекста.
+  const safePreviousPlan =
+    String(previous_plan || "").slice(-18000);
+
+  generationInProgress = true;
+
+  try {
+    const result =
+      await generatePlanChunk({
+        startDay,
+        endDay,
+
+        businessInfo:
+          business_info,
+
+        targetAudience:
+          target_audience,
+
+        contentGoal:
+          content_goal,
+
+        contentStyle:
+          content_style,
+
+        previousPlan:
+          safePreviousPlan,
+
+        label:
+          `PLAN DAYS ${startDay}-${endDay}`
+      });
+
+    return res.json({
+      ok: true,
+
+      start_day:
+        startDay,
+
+      end_day:
+        endDay,
+
+      model:
+        GIGACHAT_MODEL,
+
+      status:
+        result.status,
+
+      time_ms:
+        Date.now() - startedAt,
+
+      result_length:
+        result.result.length,
+
+      // Salebot сохраняет именно это поле.
+      reels_result:
+        result.result
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+
+      start_day:
+        startDay,
+
+      end_day:
+        endDay,
+
+      message:
+        error.message,
+
+      status:
+        error.response?.status,
+
+      response:
+        error.response?.data,
+
+      time_ms:
+        Date.now() - startedAt
+    });
+
+  } finally {
+    generationInProgress = false;
+  }
+}
+
+// ============================================================
+// HEALTH
+// ============================================================
+
+app.get("/health", (req, res) => {
+  res.json({
+    ok: true,
+
+    service:
+      "content-constructor-gateway",
+
+    model:
+      GIGACHAT_MODEL,
+
+    gigachat_key_configured:
+      !!GIGACHAT_KEY,
+
+    bridge_key_configured:
+      !!BRIDGE_KEY,
+
+    generation_in_progress:
+      generationInProgress
+  });
+});
+
+// ============================================================
+// ROOT
+// ============================================================
+
+app.get("/", (req, res) => {
+  res.json({
+    ok: true,
+
+    service:
+      "content-constructor-gateway",
+
+    message:
+      "МОЙ КОНТЕНТ-КОНСТРУКТОР gateway is running",
+
+    endpoints: {
+      health:
+        "/health",
+
+      test_auth:
+        "/test-auth",
+
+      test_generate:
+        "/test-generate",
+
+      test_plan_1_5:
+        "/test-plan-1-5",
+
+      generate:
+        "POST /generate",
+
+      plan_1_5:
+        "POST /generate-plan-1-5",
+
+      plan_6_10:
+        "POST /generate-plan-6-10",
+
+      plan_11_15:
+        "POST /generate-plan-11-15",
+
+      plan_16_20:
+        "POST /generate-plan-16-20",
+
+      plan_21_25:
+        "POST /generate-plan-21-25",
+
+      plan_26_30:
+        "POST /generate-plan-26-30"
+    }
+  });
+});
 
 // ============================================================
 // TEST AUTH
 // ============================================================
 
-app.get(
-  "/test-auth",
-  async (req, res) => {
+app.get("/test-auth", async (req, res) => {
+  try {
+    const token =
+      await getAccessToken();
 
-    const startedAt =
-      Date.now();
+    res.json({
+      ok: true,
 
-    try {
+      stage:
+        "auth",
 
-      const token =
-        await getAccessToken();
+      token_received:
+        !!token
+    });
 
-      return res.json({
-        ok: true,
-        stage: "auth",
-        token_received: !!token,
-        time_ms:
-          Date.now() - startedAt
-      });
+  } catch (error) {
+    console.error(
+      "AUTH ERROR:",
+      error.message
+    );
 
-    } catch (error) {
+    res.status(500).json({
+      ok: false,
 
-      console.error(
-        "AUTH ERROR:",
+      stage:
+        "auth",
+
+      error:
         error.message
-      );
-
-      return res.status(500).json({
-        ok: false,
-        stage: "auth",
-        error: error.message,
-        status:
-          error.response?.status,
-        response:
-          error.response?.data
-      });
-    }
+    });
   }
-);
+});
 
 // ============================================================
 // TEST BASIC GENERATION
 // ============================================================
 
-app.get(
-  "/test-generate",
-  async (req, res) => {
+app.get("/test-generate", async (req, res) => {
+  const startedAt = Date.now();
 
-    const startedAt =
-      Date.now();
+  try {
+    const token =
+      await getAccessToken();
 
-    try {
+    const response =
+      await axios.post(
+        CHAT_URL,
+        {
+          model:
+            GIGACHAT_MODEL,
 
-      const token =
-        await getAccessToken();
+          messages: [
+            {
+              role: "user",
 
-      const response =
-        await axios.post(
-          CHAT_URL,
-
-          {
-            model: GIGACHAT_MODEL,
-
-            messages: [
-              {
-                role: "user",
-                content:
-                  "Ответь одним словом: Да"
-              }
-            ],
-
-            temperature: 0.2,
-
-            max_tokens: 10
-          },
-
-          {
-            httpsAgent,
-
-            timeout: 9000,
-
-            headers: {
-              Authorization:
-                `Bearer ${token}`,
-
-              "Content-Type":
-                "application/json"
+              content:
+                "Ответь одним словом: Да"
             }
+          ],
+
+          temperature:
+            0.2,
+
+          max_tokens:
+            10
+        },
+        {
+          httpsAgent,
+
+          timeout:
+            9000,
+
+          headers: {
+            Authorization:
+              `Bearer ${token}`,
+
+            "Content-Type":
+              "application/json"
           }
-        );
-
-      const result =
-        response.data
-          ?.choices
-          ?.[0]
-          ?.message
-          ?.content || "";
-
-      return res.json({
-        ok: true,
-        stage: "generation",
-        status: response.status,
-
-        time_ms:
-          Date.now() - startedAt,
-
-        response:
-          response.data,
-
-        reels_result:
-          result
-      });
-
-    } catch (error) {
-
-      console.error(
-        "TEST GENERATE ERROR:",
-        error.message
+        }
       );
 
-      return res.status(500).json({
-        ok: false,
-        stage: "generation",
-        message: error.message,
-        status:
-          error.response?.status,
-        response:
-          error.response?.data,
+    const result =
+      response.data?.choices?.[0]?.message?.content ||
+      "";
 
-        time_ms:
-          Date.now() - startedAt
+    res.json({
+      ok: true,
+
+      stage:
+        "generation",
+
+      status:
+        response.status,
+
+      time_ms:
+        Date.now() - startedAt,
+
+      response:
+        response.data,
+
+      reels_result:
+        result
+    });
+
+  } catch (error) {
+    console.error(
+      "TEST GENERATE ERROR:",
+      error.message
+    );
+
+    res.status(500).json({
+      ok: false,
+
+      stage:
+        "generation",
+
+      message:
+        error.message,
+
+      status:
+        error.response?.status,
+
+      response:
+        error.response?.data,
+
+      time_ms:
+        Date.now() - startedAt
+    });
+  }
+});
+
+// ============================================================
+// TEST 1-5 PLAN
+// ============================================================
+
+app.get("/test-plan-1-5", async (req, res) => {
+  const startedAt = Date.now();
+
+  if (generationInProgress) {
+    return res.status(429).json({
+      ok: false,
+
+      test:
+        "plan-1-5",
+
+      error:
+        "Generation already in progress"
+    });
+  }
+
+  generationInProgress = true;
+
+  try {
+    const result =
+      await generatePlanChunk({
+        startDay:
+          1,
+
+        endDay:
+          5,
+
+        businessInfo:
+          "эксперт или предприниматель, который продаёт свои услуги или продукты",
+
+        targetAudience:
+          "потенциальные клиенты этого бизнеса",
+
+        contentGoal:
+          "привлечь внимание, показать экспертность, вызвать доверие и привести к покупке",
+
+        contentStyle:
+          "легко, уверенно, современно",
+
+        previousPlan:
+          "",
+
+        label:
+          "TEST PLAN 1-5"
       });
-    }
+
+    res.json({
+      ok: true,
+
+      test:
+        "plan-1-5",
+
+      status:
+        result.status,
+
+      time_ms:
+        Date.now() - startedAt,
+
+      result_length:
+        result.result.length,
+
+      model:
+        GIGACHAT_MODEL,
+
+      reels_result:
+        result.result
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+
+      test:
+        "plan-1-5",
+
+      message:
+        error.message,
+
+      status:
+        error.response?.status,
+
+      response:
+        error.response?.data,
+
+      time_ms:
+        Date.now() - startedAt
+    });
+
+  } finally {
+    generationInProgress = false;
+  }
+});
+
+// ============================================================
+// PLAN ENDPOINTS
+// ============================================================
+
+// DAYS 1-5
+
+app.post(
+  "/generate-plan-1-5",
+  async (req, res) => {
+    return handlePlanChunk(
+      req,
+      res,
+      1,
+      5
+    );
   }
 );
 
-// ============================================================
-// TEST FIRST 15 DAYS
-// ============================================================
+// DAYS 6-10
 
-app.get(
-  "/test-plan",
+app.post(
+  "/generate-plan-6-10",
   async (req, res) => {
-
-    const startedAt =
-      Date.now();
-
-    if (generationInProgress) {
-
-      return res.status(429).json({
-        ok: false,
-        error:
-          "Plan generation already in progress. Try again later."
-      });
-    }
-
-    generationInProgress = true;
-
-    try {
-
-      console.log("");
-      console.log(
-        "===================================="
-      );
-
-      console.log(
-        "TEST: FIRST 15 DAYS"
-      );
-
-      console.log(
-        "===================================="
-      );
-
-      const token =
-        await getAccessToken();
-
-      const result =
-        await generateFirst15Days({
-
-          token,
-
-          businessInfo:
-            "эксперт или предприниматель, который продаёт свои услуги или продукты",
-
-          targetAudience:
-            "потенциальные клиенты этого бизнеса",
-
-          contentGoal:
-            "привлечь внимание, показать экспертность, вызвать доверие и привести к покупке",
-
-          contentStyle:
-            "легко, уверенно, современно"
-        });
-
-      return res.json({
-        ok: true,
-
-        test:
-          "first-15-day-plan",
-
-        status:
-          result.status,
-
-        time_ms:
-          Date.now() - startedAt,
-
-        result_length:
-          result.result.length,
-
-        model:
-          GIGACHAT_MODEL,
-
-        reels_result:
-          result.result
-      });
-
-    } catch (error) {
-
-      return res.status(500).json({
-        ok: false,
-
-        test:
-          "first-15-day-plan",
-
-        message:
-          error.message,
-
-        status:
-          error.response?.status,
-
-        response:
-          error.response?.data,
-
-        time_ms:
-          Date.now() - startedAt
-      });
-
-    } finally {
-
-      generationInProgress = false;
-    }
+    return handlePlanChunk(
+      req,
+      res,
+      6,
+      10
+    );
   }
 );
 
-// ============================================================
-// TEST FULL SEQUENTIAL PLAN
-// ============================================================
+// DAYS 11-15
 
-app.get(
-  "/test-full-plan",
+app.post(
+  "/generate-plan-11-15",
   async (req, res) => {
+    return handlePlanChunk(
+      req,
+      res,
+      11,
+      15
+    );
+  }
+);
 
-    const startedAt =
-      Date.now();
+// DAYS 16-20
 
-    if (generationInProgress) {
+app.post(
+  "/generate-plan-16-20",
+  async (req, res) => {
+    return handlePlanChunk(
+      req,
+      res,
+      16,
+      20
+    );
+  }
+);
 
-      return res.status(429).json({
-        ok: false,
-        error:
-          "Plan generation already in progress. Try again later."
-      });
-    }
+// DAYS 21-25
 
-    generationInProgress = true;
+app.post(
+  "/generate-plan-21-25",
+  async (req, res) => {
+    return handlePlanChunk(
+      req,
+      res,
+      21,
+      25
+    );
+  }
+);
 
-    try {
+// DAYS 26-30
 
-      console.log("");
-      console.log(
-        "===================================="
-      );
-
-      console.log(
-        "TEST: FULL SEQUENTIAL PLAN"
-      );
-
-      console.log(
-        "===================================="
-      );
-
-      const token =
-        await getAccessToken();
-
-      // --------------------------------------------------------
-      // FIRST 15
-      // --------------------------------------------------------
-
-      const first =
-        await generateFirst15Days({
-
-          token,
-
-          businessInfo:
-            "эксперт или предприниматель, который продаёт свои услуги или продукты",
-
-          targetAudience:
-            "потенциальные клиенты этого бизнеса",
-
-          contentGoal:
-            "привлечь внимание, показать экспертность, вызвать доверие и привести к покупке",
-
-          contentStyle:
-            "легко, уверенно, современно"
-        });
-
-      console.log(
-        "First 15 generated."
-      );
-
-      // --------------------------------------------------------
-      // NEXT 15
-      // --------------------------------------------------------
-
-      const second =
-        await generateNext15Days({
-
-          token,
-
-          businessInfo:
-            "эксперт или предприниматель, который продаёт свои услуги или продукты",
-
-          targetAudience:
-            "потенциальные клиенты этого бизнеса",
-
-          contentGoal:
-            "привлечь внимание, показать экспертность, вызвать доверие и привести к покупке",
-
-          contentStyle:
-            "легко, уверенно, современно",
-
-          previousPlan:
-            first.result
-        });
-
-      console.log(
-        "Next 15 generated."
-      );
-
-      const combined =
-        `${first.result}\n\n${second.result}`;
-
-      return res.json({
-
-        ok: true,
-
-        test:
-          "full-sequential-plan",
-
-        time_ms:
-          Date.now() - startedAt,
-
-        first_15_time_ms:
-          first.elapsed,
-
-        next_15_time_ms:
-          second.elapsed,
-
-        first_15_length:
-          first.result.length,
-
-        next_15_length:
-          second.result.length,
-
-        combined_length:
-          combined.length,
-
-        reels_result:
-          combined
-      });
-
-    } catch (error) {
-
-      return res.status(500).json({
-
-        ok: false,
-
-        test:
-          "full-sequential-plan",
-
-        message:
-          error.message,
-
-        status:
-          error.response?.status,
-
-        response:
-          error.response?.data,
-
-        time_ms:
-          Date.now() - startedAt
-      });
-
-    } finally {
-
-      generationInProgress = false;
-    }
+app.post(
+  "/generate-plan-26-30",
+  async (req, res) => {
+    return handlePlanChunk(
+      req,
+      res,
+      26,
+      30
+    );
   }
 );
 
@@ -1040,846 +1159,340 @@ app.get(
 // MAIN GENERATE
 // ============================================================
 
-app.post(
-  "/generate",
-  async (req, res) => {
+app.post("/generate", async (req, res) => {
+  const startedAt = Date.now();
 
-    const startedAt =
-      Date.now();
+  console.log("");
+  console.log("====================================");
+  console.log("GENERATE REQUEST RECEIVED");
+  console.log("====================================");
 
-    console.log("");
+  try {
+    const {
+      bridge_key,
+      content_type,
+      business_info,
+      target_audience,
+      content_goal,
+      reels_topic,
+      content_style
+    } = req.body || {};
+
     console.log(
-      "===================================="
+      "Content-Type:",
+      content_type
     );
 
     console.log(
-      "GENERATE REQUEST RECEIVED"
+      "Body keys:",
+      Object.keys(req.body || {})
     );
 
-    console.log(
-      "===================================="
-    );
+    // --------------------------------------------------------
+    // BRIDGE KEY
+    // --------------------------------------------------------
 
-    try {
+    if (!bridge_key) {
+      return res.status(401).json({
+        ok: false,
 
-      // --------------------------------------------------------
-      // BODY
-      // --------------------------------------------------------
+        error:
+          "bridge_key is required"
+      });
+    }
 
-      const {
-        bridge_key,
+    if (!BRIDGE_KEY) {
+      return res.status(500).json({
+        ok: false,
+
+        error:
+          "BRIDGE_KEY is not configured"
+      });
+    }
+
+    if (bridge_key !== BRIDGE_KEY) {
+      return res.status(401).json({
+        ok: false,
+
+        error:
+          "Invalid bridge_key"
+      });
+    }
+
+    // --------------------------------------------------------
+    // REQUIRED FIELDS
+    // --------------------------------------------------------
+
+    if (!content_type) {
+      return res.status(400).json({
+        ok: false,
+
+        error:
+          "content_type is required"
+      });
+    }
+
+    if (!business_info) {
+      return res.status(400).json({
+        ok: false,
+
+        error:
+          "business_info is required"
+      });
+    }
+
+    if (!target_audience) {
+      return res.status(400).json({
+        ok: false,
+
+        error:
+          "target_audience is required"
+      });
+    }
+
+    if (!content_goal) {
+      return res.status(400).json({
+        ok: false,
+
+        error:
+          "content_goal is required"
+      });
+    }
+
+    if (!content_style) {
+      return res.status(400).json({
+        ok: false,
+
+        error:
+          "content_style is required"
+      });
+    }
+
+    // --------------------------------------------------------
+    // CONTENT PLAN
+    // --------------------------------------------------------
+
+    if (isContentPlan(content_type)) {
+      return res.status(400).json({
+        ok: false,
+
+        error:
+          "Для контент-плана используй отдельные endpoints: /generate-plan-1-5, /generate-plan-6-10, /generate-plan-11-15, /generate-plan-16-20, /generate-plan-21-25, /generate-plan-26-30"
+      });
+    }
+
+    // --------------------------------------------------------
+    // NORMAL CONTENT
+    // --------------------------------------------------------
+
+    if (!reels_topic) {
+      return res.status(400).json({
+        ok: false,
+
+        error:
+          "reels_topic is required"
+      });
+    }
+
+    const token =
+      await getAccessToken();
+
+    const prompt =
+      buildPrompt({
+        contentType:
+          content_type,
+
+        businessInfo:
+          business_info,
+
+        targetAudience:
+          target_audience,
+
+        contentGoal:
+          content_goal,
+
+        reelsTopic:
+          reels_topic,
+
+        contentStyle:
+          content_style
+      });
+
+    const result =
+      await generateWithGigaChat({
+        token,
+
+        prompt,
+
+        temperature:
+          0.75,
+
+        maxTokens:
+          1800,
+
+        label:
+          "NORMAL CONTENT"
+      });
+
+    return res.json({
+      ok: true,
+
+      content_type:
         content_type,
-        business_info,
-        target_audience,
-        content_goal,
-        reels_topic,
-        content_style
-      } = req.body || {};
-
-      console.log(
-        "Content-Type:",
-        content_type
-      );
-
-      console.log(
-        "Body keys:",
-        Object.keys(
-          req.body || {}
-        )
-      );
-
-      // --------------------------------------------------------
-      // BRIDGE KEY
-      // --------------------------------------------------------
-
-      if (!bridge_key) {
-
-        return res.status(401).json({
-          ok: false,
-          error:
-            "bridge_key is required"
-        });
-      }
-
-      if (!BRIDGE_KEY) {
-
-        return res.status(500).json({
-          ok: false,
-          error:
-            "BRIDGE_KEY is not configured"
-        });
-      }
-
-      if (bridge_key !== BRIDGE_KEY) {
-
-        return res.status(401).json({
-          ok: false,
-          error:
-            "Invalid bridge_key"
-        });
-      }
-
-      // --------------------------------------------------------
-      // CONTENT PLAN?
-      // --------------------------------------------------------
-
-      const planRequest =
-        isContentPlan(
-          content_type
-        );
-
-      console.log(
-        "Content plan:",
-        planRequest
-      );
-
-      // --------------------------------------------------------
-      // REQUIRED FIELDS
-      // --------------------------------------------------------
-
-      if (!content_type) {
-
-        return res.status(400).json({
-          ok: false,
-          error:
-            "content_type is required"
-        });
-      }
-
-      if (!business_info) {
-
-        return res.status(400).json({
-          ok: false,
-          error:
-            "business_info is required"
-        });
-      }
-
-      if (!target_audience) {
-
-        return res.status(400).json({
-          ok: false,
-          error:
-            "target_audience is required"
-        });
-      }
-
-      if (!content_goal) {
-
-        return res.status(400).json({
-          ok: false,
-          error:
-            "content_goal is required"
-        });
-      }
-
-      if (!content_style) {
-
-        return res.status(400).json({
-          ok: false,
-          error:
-            "content_style is required"
-        });
-      }
-
-      if (
-        !planRequest &&
-        !reels_topic
-      ) {
-
-        return res.status(400).json({
-          ok: false,
-          error:
-            "reels_topic is required"
-        });
-      }
-
-      // --------------------------------------------------------
-      // LOG DATA
-      // --------------------------------------------------------
-
-      console.log(
-        "Business info:",
-        business_info
-      );
-
-      console.log(
-        "Target audience:",
-        target_audience
-      );
-
-      console.log(
-        "Content goal:",
-        content_goal
-      );
-
-      console.log(
-        "Content style:",
-        content_style
-      );
-
-      if (!planRequest) {
-
-        console.log(
-          "Reels topic:",
-          reels_topic
-        );
-      }
-
-      // --------------------------------------------------------
-      // TOKEN
-      // --------------------------------------------------------
-
-      console.log(
-        "Getting GigaChat token..."
-      );
-
-      const token =
-        await getAccessToken();
-
-      console.log(
-        "OAuth token received"
-      );
-
-      // ========================================================
-      // FIRST 15 DAYS OF CONTENT PLAN
-      // ========================================================
-
-      if (planRequest) {
-
-        if (generationInProgress) {
-
-          console.log(
-            "PLAN GENERATION ALREADY IN PROGRESS"
-          );
-
-          return res.status(429).json({
-            ok: false,
-            error:
-              "Another content plan is currently being generated. Please try again shortly."
-          });
-        }
-
-        generationInProgress = true;
-
-        try {
-
-          console.log(
-            "Generating FIRST 15 DAYS only..."
-          );
-
-          const result =
-            await generateFirst15Days({
-
-              token,
-
-              businessInfo:
-                business_info,
-
-              targetAudience:
-                target_audience,
-
-              contentGoal:
-                content_goal,
-
-              contentStyle:
-                content_style
-            });
-
-          const totalTime =
-            Date.now() - startedAt;
-
-          console.log(
-            "First 15 days generated."
-          );
-
-          console.log(
-            "Total request time:",
-            totalTime,
-            "ms"
-          );
-
-          console.log(
-            "Returning first 15 days to Salebot."
-          );
-
-          return res.json({
-
-            ok: true,
-
-            reels_result:
-              result.result
-
-          });
-
-        } finally {
-
-          generationInProgress = false;
-        }
-      }
-
-      // ========================================================
-      // STANDARD CONTENT
-      // ========================================================
-
-      const prompt =
-        buildPrompt({
-
-          contentType:
-            content_type,
-
-          businessInfo:
-            business_info,
-
-          targetAudience:
-            target_audience,
-
-          contentGoal:
-            content_goal,
-
-          reelsTopic:
-            reels_topic,
-
-          contentStyle:
-            content_style
-        });
-
-      console.log(
-        "Using standard content generation"
-      );
-
-      const generated =
-        await generateWithGigaChat({
-
-          token,
-
-          prompt,
-
-          temperature:
-            0.75,
-
-          maxTokens:
-            1800,
-
-          label:
-            "STANDARD CONTENT",
-
-          timeout:
-            11000
-        });
-
-      const totalTime =
-        Date.now() - startedAt;
-
-      console.log(
-        "Total request time:",
-        totalTime,
-        "ms"
-      );
-
-      console.log(
-        "GENERATION SUCCESS"
-      );
-
-      console.log(
-        "===================================="
-      );
-
-      return res.json({
-
-        ok: true,
-
-        reels_result:
-          generated.result
-
-      });
-
-    } catch (error) {
-
-      console.error("");
-      console.error(
-        "===================================="
-      );
-
-      console.error(
-        "GENERATE ERROR"
-      );
-
-      console.error(
-        "===================================="
-      );
-
-      console.error(
-        "Message:",
-        error.message
-      );
-
-      console.error(
-        "Status:",
-        error.response?.status
-      );
-
-      console.error(
-        "Response:",
-        error.response?.data
-      );
-
-      console.error(
-        "Total request time:",
-        Date.now() - startedAt,
-        "ms"
-      );
-
-      console.error(
-        "===================================="
-      );
-
-      return res.status(500).json({
-
-        ok: false,
-
-        error:
-          error.message,
-
-        status:
-          error.response?.status,
-
-        response:
-          error.response?.data
-      });
-    }
-  }
-);
-
-// ============================================================
-// GENERATE NEXT 15 DAYS
-// ============================================================
-
-app.post(
-  "/generate-next-15",
-  async (req, res) => {
-
-    const startedAt =
-      Date.now();
-
-    console.log("");
-    console.log(
-      "===================================="
-    );
-
-    console.log(
-      "NEXT 15 DAYS REQUEST RECEIVED"
-    );
-
-    console.log(
-      "===================================="
-    );
-
-    try {
-
-      const {
-        bridge_key,
-        business_info,
-        target_audience,
-        content_goal,
-        content_style,
-        previous_plan
-      } = req.body || {};
-
-      console.log(
-        "Body keys:",
-        Object.keys(
-          req.body || {}
-        )
-      );
-
-      // --------------------------------------------------------
-      // BRIDGE KEY
-      // --------------------------------------------------------
-
-      if (!bridge_key) {
-
-        return res.status(401).json({
-          ok: false,
-          error:
-            "bridge_key is required"
-        });
-      }
-
-      if (!BRIDGE_KEY) {
-
-        return res.status(500).json({
-          ok: false,
-          error:
-            "BRIDGE_KEY is not configured"
-        });
-      }
-
-      if (bridge_key !== BRIDGE_KEY) {
-
-        return res.status(401).json({
-          ok: false,
-          error:
-            "Invalid bridge_key"
-        });
-      }
-
-      // --------------------------------------------------------
-      // REQUIRED DATA
-      // --------------------------------------------------------
-
-      if (!business_info) {
-
-        return res.status(400).json({
-          ok: false,
-          error:
-            "business_info is required"
-        });
-      }
-
-      if (!target_audience) {
-
-        return res.status(400).json({
-          ok: false,
-          error:
-            "target_audience is required"
-        });
-      }
-
-      if (!content_goal) {
-
-        return res.status(400).json({
-          ok: false,
-          error:
-            "content_goal is required"
-        });
-      }
-
-      if (!content_style) {
-
-        return res.status(400).json({
-          ok: false,
-          error:
-            "content_style is required"
-        });
-      }
-
-      if (!previous_plan) {
-
-        return res.status(400).json({
-          ok: false,
-          error:
-            "previous_plan is required"
-        });
-      }
-
-      // --------------------------------------------------------
-      // PREVENT DUPLICATE SIMULTANEOUS GENERATION
-      // --------------------------------------------------------
-
-      if (generationInProgress) {
-
-        console.log(
-          "PLAN GENERATION ALREADY IN PROGRESS"
-        );
-
-        return res.status(429).json({
-          ok: false,
-          error:
-            "Another content plan is currently being generated. Please try again shortly."
-        });
-      }
-
-      generationInProgress = true;
-
-      try {
-
-        // ------------------------------------------------------
-        // TOKEN
-        // ------------------------------------------------------
-
-        console.log(
-          "Getting GigaChat token..."
-        );
-
-        const token =
-          await getAccessToken();
-
-        console.log(
-          "OAuth token received"
-        );
-
-        // ------------------------------------------------------
-        // GENERATE DAYS 16-30
-        // ------------------------------------------------------
-
-        console.log(
-          "Generating DAYS 16-30..."
-        );
-
-        const result =
-          await generateNext15Days({
-
-            token,
-
-            businessInfo:
-              business_info,
-
-            targetAudience:
-              target_audience,
-
-            contentGoal:
-              content_goal,
-
-            contentStyle:
-              content_style,
-
-            previousPlan:
-              previous_plan
-          });
-
-        const totalTime =
-          Date.now() - startedAt;
-
-        console.log(
-          "Days 16-30 generated."
-        );
-
-        console.log(
-          "Total request time:",
-          totalTime,
-          "ms"
-        );
-
-        console.log(
-          "Returning next 15 days to Salebot."
-        );
-
-        return res.json({
-
-          ok: true,
-
-          reels_result:
-            result.result
-
-        });
-
-      } finally {
-
-        generationInProgress = false;
-      }
-
-    } catch (error) {
-
-      console.error("");
-      console.error(
-        "===================================="
-      );
-
-      console.error(
-        "NEXT 15 DAYS ERROR"
-      );
-
-      console.error(
-        "===================================="
-      );
-
-      console.error(
-        "Message:",
-        error.message
-      );
-
-      console.error(
-        "Status:",
-        error.response?.status
-      );
-
-      console.error(
-        "Response:",
-        error.response?.data
-      );
-
-      console.error(
-        "Total request time:",
-        Date.now() - startedAt,
-        "ms"
-      );
-
-      console.error(
-        "===================================="
-      );
-
-      return res.status(500).json({
-
-        ok: false,
-
-        error:
-          error.message,
-
-        status:
-          error.response?.status,
-
-        response:
-          error.response?.data
-      });
-    }
-  }
-);
-
-// ============================================================
-// ROOT
-// ============================================================
-
-app.get(
-  "/",
-  (req, res) => {
-
-    res.json({
-
-      ok: true,
-
-      service:
-        "content-constructor-gateway",
 
       status:
-        "running",
+        result.status,
 
-      model:
-        GIGACHAT_MODEL,
+      time_ms:
+        Date.now() - startedAt,
 
-      endpoints: {
+      result_length:
+        result.result.length,
 
-        health:
-          "/health",
-
-        testAuth:
-          "/test-auth",
-
-        testGenerate:
-          "/test-generate",
-
-        testPlan:
-          "/test-plan",
-
-        testFullPlan:
-          "/test-full-plan",
-
-        generate:
-          "POST /generate",
-
-        generateNext15:
-          "POST /generate-next-15"
-      }
-
+      reels_result:
+        result.result
     });
-  }
-);
 
-// ============================================================
-// HEALTH
-// ============================================================
+  } catch (error) {
+    console.error(
+      "GENERATE ERROR"
+    );
 
-app.get(
-  "/health",
-  (req, res) => {
+    console.error(
+      "Message:",
+      error.message
+    );
 
-    res.json({
+    console.error(
+      "Status:",
+      error.response?.status
+    );
 
-      ok: true,
+    console.error(
+      "Response:",
+      error.response?.data
+    );
 
-      service:
-        "content-constructor-gateway",
+    return res.status(500).json({
+      ok: false,
+
+      message:
+        error.message,
 
       status:
-        "healthy",
+        error.response?.status,
 
-      model:
-        GIGACHAT_MODEL,
+      response:
+        error.response?.data,
 
-      bridge_key_configured:
-        !!BRIDGE_KEY,
-
-      gigachat_key_configured:
-        !!GIGACHAT_KEY,
-
-      generation_in_progress:
-        generationInProgress
-
+      time_ms:
+        Date.now() - startedAt
     });
   }
-);
+});
 
 // ============================================================
 // 404
 // ============================================================
 
-app.use(
-  (req, res) => {
+app.use((req, res) => {
+  res.status(404).json({
+    ok: false,
 
-    res.status(404).json({
+    error:
+      "Endpoint not found",
 
-      ok: false,
+    path:
+      req.path,
 
-      error:
-        "Endpoint not found"
-
-    });
-  }
-);
+    method:
+      req.method
+  });
+});
 
 // ============================================================
-// SERVER START
+// GLOBAL ERROR HANDLER
 // ============================================================
 
-app.listen(
-  PORT,
-  () => {
+app.use((error, req, res, next) => {
+  console.error(
+    "GLOBAL ERROR:",
+    error
+  );
 
-    console.log("");
-    console.log(
-      "===================================="
-    );
+  res.status(500).json({
+    ok: false,
 
-    console.log(
-      `Content Constructor Gateway started on port ${PORT}`
-    );
+    error:
+      error.message ||
+      "Internal server error"
+  });
+});
 
-    console.log(
-      "===================================="
-    );
+// ============================================================
+// START SERVER
+// ============================================================
 
-    console.log(
-      "GigaChat model:",
-      GIGACHAT_MODEL
-    );
+app.listen(PORT, () => {
+  console.log("");
+  console.log("====================================");
+  console.log("МОЙ КОНТЕНТ-КОНСТРУКТОР");
+  console.log("Gateway started");
+  console.log("====================================");
 
-    console.log(
-      "Bridge key configured:",
-      !!BRIDGE_KEY
-    );
+  console.log(
+    "PORT:",
+    PORT
+  );
 
-    console.log(
-      "GigaChat key configured:",
-      !!GIGACHAT_KEY
-    );
+  console.log(
+    "MODEL:",
+    GIGACHAT_MODEL
+  );
 
-    console.log(
-      "Plan architecture:",
-      "15 + 15 sequential"
-    );
+  console.log(
+    "GIGACHAT_KEY:",
+    GIGACHAT_KEY
+      ? "configured"
+      : "MISSING"
+  );
 
-    console.log(
-      "Plan max tokens:",
-      650
-    );
+  console.log(
+    "BRIDGE_KEY:",
+    BRIDGE_KEY
+      ? "configured"
+      : "MISSING"
+  );
 
-    console.log(
-      "Plan timeout:",
-      "9000 ms"
-    );
+  console.log("");
 
-    console.log(
-      "===================================="
-    );
-  }
-);
+  console.log(
+    "PLAN ENDPOINTS:"
+  );
+
+  console.log(
+    "POST /generate-plan-1-5"
+  );
+
+  console.log(
+    "POST /generate-plan-6-10"
+  );
+
+  console.log(
+    "POST /generate-plan-11-15"
+  );
+
+  console.log(
+    "POST /generate-plan-16-20"
+  );
+
+  console.log(
+    "POST /generate-plan-21-25"
+  );
+
+  console.log(
+    "POST /generate-plan-26-30"
+  );
+
+  console.log("====================================");
+});
