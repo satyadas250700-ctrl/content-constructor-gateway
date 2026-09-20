@@ -44,8 +44,11 @@ let accessToken = null;
 let tokenExpiresAt = 0;
 
 // ============================================================
-// GENERATION LOCK
+// PLAN GENERATION LOCK
 // ============================================================
+
+// Не разрешаем одновременно запускать несколько
+// тяжёлых генераций контент-плана на одном Render instance.
 
 let generationInProgress = false;
 
@@ -134,10 +137,10 @@ function getContentInstructions(contentType) {
 - соответствовать целевой аудитории;
 - демонстрировать экспертность;
 - учитывать выбранную цель;
-- соответствовать выбранному стилю.
+- соответствовать выбранному стилю;
+- быть связанным с конкретным предложением, если оно указано.
 
 Структура:
-
 1. Сильное начало.
 2. Основная мысль.
 3. Полезное содержание.
@@ -174,6 +177,9 @@ CTA:
 интересным и соответствовать бизнесу,
 аудитории, цели и стилю.
 
+Если указано конкретное предложение,
+органично учитывай его в содержании.
+
 Выдай только готовый материал.
 `;
   }
@@ -191,7 +197,6 @@ CTA:
 СОЗДАЙ ГОТОВЫЙ ПОСТ ДЛЯ СОЦИАЛЬНЫХ СЕТЕЙ.
 
 Требования:
-
 - сильное начало;
 - интересная основная часть;
 - конкретная польза;
@@ -200,7 +205,8 @@ CTA:
 - соответствие аудитории;
 - соответствие цели;
 - выбранный стиль;
-- хороший CTA.
+- хороший CTA;
+- если указано конкретное предложение, учитывай его.
 
 Выдай только готовый пост.
 `;
@@ -228,6 +234,9 @@ CTA:
 Первый слайд должен цеплять.
 Последний должен содержать CTA.
 
+Если указано конкретное предложение,
+органично учитывай его.
+
 Выдай только готовую карусель.
 `;
   }
@@ -241,11 +250,12 @@ CTA:
 для предпринимателя или эксперта.
 
 Учитывай:
-
-бизнес,
-целевую аудиторию,
-цель,
-тему и стиль.
+- бизнес;
+- целевую аудиторию;
+- конкретное предложение;
+- цель;
+- тему;
+- стиль.
 
 Ответ только на русском языке.
 `;
@@ -259,12 +269,18 @@ function buildPrompt({
   contentType,
   businessInfo,
   targetAudience,
+  offer,
   contentGoal,
   reelsTopic,
   contentStyle
 }) {
   const instructions =
     getContentInstructions(contentType);
+
+  const offerText =
+    offer && String(offer).trim()
+      ? offer
+      : "Конкретное предложение не указано.";
 
   return `
 Ты — профессиональный российский
@@ -283,6 +299,9 @@ ${businessInfo}
 
 Целевая аудитория:
 ${targetAudience}
+
+КОНКРЕТНОЕ ПРЕДЛОЖЕНИЕ:
+${offerText}
 
 Цель контента:
 ${contentGoal}
@@ -307,16 +326,20 @@ ${instructions}
 - Не объясняй процесс создания.
 - Учитывай бизнес.
 - Учитывай аудиторию.
+- Учитывай конкретное предложение.
 - Учитывай цель.
 - Учитывай стиль.
 - Контент должен быть практически применим.
+- Не придумывай факты о бизнесе, которых клиент не сообщал.
+- Не выдавай непроверенные обвинения в адрес конкурентов за факты.
+- Не используй вымышленные цены, акции, гарантии или результаты, если клиент их не указал.
 
 Выдай только готовый контент.
 `;
 }
 
 // ============================================================
-// BUILD 5-DAY CONTENT PLAN PROMPT
+// BUILD PLAN CHUNK PROMPT
 // ============================================================
 
 function buildPlanChunkPrompt({
@@ -324,37 +347,35 @@ function buildPlanChunkPrompt({
   endDay,
   businessInfo,
   targetAudience,
+  offer,
   contentGoal,
   contentStyle,
   previousPlan
 }) {
-  const contextBlock = previousPlan
-    ? `
-ПРЕДЫДУЩАЯ ЧАСТЬ ПЛАНА:
+  const offerText =
+    offer && String(offer).trim()
+      ? offer
+      : "Конкретное предложение не указано.";
 
-${previousPlan}
-
-Используй её как контекст.
-
-Не повторяй темы и идеи.
-Продолжай общую логику контент-воронки.
-`
-    : `
-Это начало контент-плана.
-
-Построй первые дни так, чтобы человек постепенно
-переходил от внимания к интересу и доверию.
-`;
+  const previousPlanText =
+    previousPlan && String(previousPlan).trim()
+      ? String(previousPlan).slice(-18000)
+      : "Предыдущих дней нет. Это начало контент-плана.";
 
   return `
 Ты — профессиональный контент-стратег
 для предпринимателей и экспертов.
 
-Создай часть единого контент-плана на 30 дней.
+Ты работаешь внутри сервиса
+«МОЙ КОНТЕНТ-КОНСТРУКТОР».
 
-ТОЛЬКО ДНИ ${startDay}–${endDay}.
+Сейчас нужно создать ТОЛЬКО дни
+${startDay}–${endDay}
+из общего контент-плана на 30 дней.
 
-ДАННЫЕ КЛИЕНТА:
+==================================================
+ДАННЫЕ КЛИЕНТА
+==================================================
 
 Бизнес:
 ${businessInfo}
@@ -362,55 +383,125 @@ ${businessInfo}
 Целевая аудитория:
 ${targetAudience}
 
+Конкретное предложение:
+${offerText}
+
 Цель контента:
 ${contentGoal}
 
 Стиль:
 ${contentStyle}
 
-${contextBlock}
+==================================================
+УЖЕ СОЗДАННЫЕ ДНИ
+==================================================
 
-ЛОГИКА ПЛАНА:
+${previousPlanText}
 
-Постепенно веди аудиторию по пути:
+==================================================
+ЗАДАЧА
+==================================================
 
-внимание → интерес → экспертность → доверие → желание → действие.
+Продолжи существующий контент-план.
 
-Используй и чередуй форматы:
+Создай ВСЕ дни:
+${startDay}, ${startDay + 1}, ${startDay + 2}, ${startDay + 3}, ${endDay}.
+
+Не начинай новый план с нуля.
+
+Учитывай темы и форматы уже созданных дней.
+
+Не повторяй уже использованные темы.
+
+Постепенно веди аудиторию по логике:
+
+внимание
+→ интерес
+→ экспертность
+→ доверие
+→ желание
+→ действие.
+
+При этом не обязательно жёстко соблюдать одну стадию
+на каждый отдельный день — контент должен выглядеть
+естественно и разнообразно.
+
+==================================================
+ФОРМАТЫ
+==================================================
+
+Используй и чередуй:
 
 - Reels
 - Пост
 - Карусель
 - Telegram-пост
 
-ТРЕБОВАНИЯ:
+Не используй один и тот же формат подряд,
+если для этого нет явной причины.
 
-1. Создай ВСЕ дни с ${startDay} по ${endDay}.
-2. Каждый день должен быть конкретным.
-3. Темы должны соответствовать именно этому бизнесу.
-4. Не используй абстрактные универсальные идеи.
-5. Не повторяй темы и идеи из предыдущей части.
-6. Чередуй форматы.
-7. Учитывай целевую аудиторию.
-8. Учитывай цель контента.
-9. Учитывай стиль.
-10. Не пиши длинные готовые тексты.
-11. Не пиши полный сценарий.
-12. Не объясняй свои решения.
-13. Не добавляй вступление или заключение.
-14. Ответ только на русском языке.
+==================================================
+ТРЕБОВАНИЯ К КАЖДОМУ ДНЮ
+==================================================
 
-ФОРМАТ:
+Каждый день должен содержать:
 
 День N — Формат
-Тема: конкретная тема
+Тема: конкретная тема публикации
 Идея: что именно показать или раскрыть
 Задача: какую реакцию или действие должна вызвать публикация
 CTA: конкретный призыв к действию
 
-Каждый пункт — короткий, но содержательный.
+==================================================
+ВАЖНЫЕ ТРЕБОВАНИЯ
+==================================================
 
-Не используй одинаковые CTA каждый день.
+1. Создай ВСЕ дни с ${startDay} по ${endDay}.
+2. Каждый день должен быть конкретным.
+3. Темы должны соответствовать именно этому бизнесу.
+4. Учитывай конкретное предложение.
+5. Не используй абстрактные универсальные идеи.
+6. Не повторяй одну и ту же тему.
+7. Чередуй форматы.
+8. Учитывай целевую аудиторию.
+9. Учитывай цель контента.
+10. Учитывай выбранный стиль.
+11. Не пиши готовые длинные тексты.
+12. Не пиши полноценные сценарии.
+13. Не объясняй свои решения.
+14. Не добавляй вступление.
+15. Не добавляй заключение.
+16. Ответ только на русском языке.
+17. Не придумывай факты о бизнесе.
+18. Не придумывай отзывы, кейсы, цифры, цены или результаты.
+19. Не делай неподтверждённых обвинений в адрес конкурентов.
+20. Не используй placeholders вроде:
+   [название],
+   [продукт],
+   [месяц],
+   [город],
+   если конкретные данные неизвестны.
+21. CTA должен быть реалистичным для данного бизнеса.
+22. CTA должны разнообразиться.
+23. Продолжай логику предыдущих дней.
+
+==================================================
+ПРИМЕР СТРУКТУРЫ
+==================================================
+
+День 1 — Reels
+Тема: конкретная тема
+Идея: конкретная идея
+Задача: конкретная задача
+CTA: конкретный призыв
+
+День 2 — Пост
+Тема: конкретная тема
+Идея: конкретная идея
+Задача: конкретная задача
+CTA: конкретный призыв
+
+Продолжай до Дня ${endDay}.
 
 ВЕРНИ ТОЛЬКО КОНТЕНТ-ПЛАН.
 `;
@@ -457,7 +548,8 @@ async function generateWithGigaChat({
       {
         httpsAgent,
 
-        // Оставляем запас до таймаута Salebot.
+        // Важно для совместимости
+        // с лимитом ожидания Salebot.
         timeout: 9000,
 
         headers: {
@@ -535,70 +627,27 @@ async function generateWithGigaChat({
 }
 
 // ============================================================
-// VALIDATE PLAN DATA
-// ============================================================
-
-function validatePlanData({
-  bridge_key,
-  business_info,
-  target_audience,
-  content_goal,
-  content_style
-}) {
-  if (!bridge_key) {
-    return "bridge_key is required";
-  }
-
-  if (!BRIDGE_KEY) {
-    return "BRIDGE_KEY is not configured";
-  }
-
-  if (bridge_key !== BRIDGE_KEY) {
-    return "Invalid bridge_key";
-  }
-
-  if (!business_info) {
-    return "business_info is required";
-  }
-
-  if (!target_audience) {
-    return "target_audience is required";
-  }
-
-  if (!content_goal) {
-    return "content_goal is required";
-  }
-
-  if (!content_style) {
-    return "content_style is required";
-  }
-
-  return null;
-}
-
-// ============================================================
-// GENERATE ONE 5-DAY CHUNK
+// GENERATE PLAN CHUNK
 // ============================================================
 
 async function generatePlanChunk({
+  token,
   startDay,
   endDay,
   businessInfo,
   targetAudience,
+  offer,
   contentGoal,
   contentStyle,
-  previousPlan,
-  label
+  previousPlan
 }) {
-  const token =
-    await getAccessToken();
-
   const prompt =
     buildPlanChunkPrompt({
       startDay,
       endDay,
       businessInfo,
       targetAudience,
+      offer,
       contentGoal,
       contentStyle,
       previousPlan
@@ -607,17 +656,44 @@ async function generatePlanChunk({
   return await generateWithGigaChat({
     token,
     prompt,
-
     temperature: 0.35,
-
     maxTokens: 550,
-
-    label
+    label:
+      `DAYS ${startDay}-${endDay}`
   });
 }
 
 // ============================================================
-// GENERIC PLAN CHUNK HANDLER
+// VALIDATE PLAN DATA
+// ============================================================
+
+function validatePlanData({
+  businessInfo,
+  targetAudience,
+  contentGoal,
+  contentStyle
+}) {
+  if (!businessInfo) {
+    return "business_info is required";
+  }
+
+  if (!targetAudience) {
+    return "target_audience is required";
+  }
+
+  if (!contentGoal) {
+    return "content_goal is required";
+  }
+
+  if (!contentStyle) {
+    return "content_style is required";
+  }
+
+  return null;
+}
+
+// ============================================================
+// HANDLE PLAN CHUNK
 // ============================================================
 
 async function handlePlanChunk(
@@ -629,60 +705,150 @@ async function handlePlanChunk(
   const startedAt = Date.now();
 
   console.log("");
-  console.log("====================================");
   console.log(
-    `PLAN CHUNK REQUEST: ${startDay}-${endDay}`
+    "===================================="
   );
-  console.log("====================================");
+  console.log(
+    `PLAN REQUEST ${startDay}-${endDay}`
+  );
+  console.log(
+    "===================================="
+  );
 
   if (generationInProgress) {
+    console.log(
+      "PLAN GENERATION ALREADY IN PROGRESS"
+    );
+
     return res.status(429).json({
       ok: false,
       error:
-        "Generation already in progress. Please try again later."
+        "Another content plan generation is already in progress. Please try again shortly.",
+      start_day: startDay,
+      end_day: endDay
     });
   }
-
-  const {
-    bridge_key,
-    business_info,
-    target_audience,
-    content_goal,
-    content_style,
-    previous_plan
-  } = req.body || {};
-
-  const validationError =
-    validatePlanData({
-      bridge_key,
-      business_info,
-      target_audience,
-      content_goal,
-      content_style
-    });
-
-  if (validationError) {
-    const status =
-      validationError === "Invalid bridge_key" ||
-      validationError === "bridge_key is required"
-        ? 401
-        : 400;
-
-    return res.status(status).json({
-      ok: false,
-      error: validationError
-    });
-  }
-
-  // Ограничиваем размер предыдущего контекста.
-  const safePreviousPlan =
-    String(previous_plan || "").slice(-18000);
 
   generationInProgress = true;
 
   try {
+    const {
+      bridge_key,
+      business_info,
+      target_audience,
+      offer,
+      content_goal,
+      content_style,
+      previous_plan
+    } = req.body || {};
+
+    console.log(
+      "Body keys:",
+      Object.keys(req.body || {})
+    );
+
+    // --------------------------------------------------------
+    // BRIDGE KEY
+    // --------------------------------------------------------
+
+    if (!bridge_key) {
+      return res.status(401).json({
+        ok: false,
+        error:
+          "bridge_key is required"
+      });
+    }
+
+    if (!BRIDGE_KEY) {
+      return res.status(500).json({
+        ok: false,
+        error:
+          "BRIDGE_KEY is not configured"
+      });
+    }
+
+    if (bridge_key !== BRIDGE_KEY) {
+      return res.status(401).json({
+        ok: false,
+        error:
+          "Invalid bridge_key"
+      });
+    }
+
+    // --------------------------------------------------------
+    // REQUIRED DATA
+    // --------------------------------------------------------
+
+    const validationError =
+      validatePlanData({
+        businessInfo:
+          business_info,
+        targetAudience:
+          target_audience,
+        contentGoal:
+          content_goal,
+        contentStyle:
+          content_style
+      });
+
+    if (validationError) {
+      return res.status(400).json({
+        ok: false,
+        error: validationError
+      });
+    }
+
+    // --------------------------------------------------------
+    // LOG
+    // --------------------------------------------------------
+
+    console.log(
+      "Business info:",
+      business_info
+    );
+
+    console.log(
+      "Target audience:",
+      target_audience
+    );
+
+    console.log(
+      "Offer:",
+      offer || "(not provided)"
+    );
+
+    console.log(
+      "Content goal:",
+      content_goal
+    );
+
+    console.log(
+      "Content style:",
+      content_style
+    );
+
+    console.log(
+      "Previous plan length:",
+      previous_plan
+        ? String(previous_plan).length
+        : 0
+    );
+
+    // --------------------------------------------------------
+    // TOKEN
+    // --------------------------------------------------------
+
+    const token =
+      await getAccessToken();
+
+    // --------------------------------------------------------
+    // GENERATE
+    // --------------------------------------------------------
+
     const result =
       await generatePlanChunk({
+        token,
+
         startDay,
         endDay,
 
@@ -692,6 +858,8 @@ async function handlePlanChunk(
         targetAudience:
           target_audience,
 
+        offer,
+
         contentGoal:
           content_goal,
 
@@ -699,11 +867,21 @@ async function handlePlanChunk(
           content_style,
 
         previousPlan:
-          safePreviousPlan,
-
-        label:
-          `PLAN DAYS ${startDay}-${endDay}`
+          previous_plan
       });
+
+    const totalTime =
+      Date.now() - startedAt;
+
+    console.log(
+      `PLAN ${startDay}-${endDay} SUCCESS`
+    );
+
+    console.log(
+      "Total time:",
+      totalTime,
+      "ms"
+    );
 
     return res.json({
       ok: true,
@@ -721,17 +899,45 @@ async function handlePlanChunk(
         result.status,
 
       time_ms:
-        Date.now() - startedAt,
+        totalTime,
 
       result_length:
         result.result.length,
 
-      // Salebot сохраняет именно это поле.
       reels_result:
         result.result
     });
 
   } catch (error) {
+    console.error("");
+
+    console.error(
+      "===================================="
+    );
+
+    console.error(
+      `PLAN ${startDay}-${endDay} ERROR`
+    );
+
+    console.error(
+      "Message:",
+      error.message
+    );
+
+    console.error(
+      "Status:",
+      error.response?.status
+    );
+
+    console.error(
+      "Response:",
+      error.response?.data
+    );
+
+    console.error(
+      "===================================="
+    );
+
     return res.status(500).json({
       ok: false,
 
@@ -741,7 +947,7 @@ async function handlePlanChunk(
       end_day:
         endDay,
 
-      message:
+      error:
         error.message,
 
       status:
@@ -760,6 +966,22 @@ async function handlePlanChunk(
 }
 
 // ============================================================
+// ROOT
+// ============================================================
+
+app.get("/", (req, res) => {
+  res.json({
+    ok: true,
+    service:
+      "content-constructor-gateway",
+    model:
+      GIGACHAT_MODEL,
+    status:
+      "online"
+  });
+});
+
+// ============================================================
 // HEALTH
 // ============================================================
 
@@ -773,65 +995,14 @@ app.get("/health", (req, res) => {
     model:
       GIGACHAT_MODEL,
 
-    gigachat_key_configured:
-      !!GIGACHAT_KEY,
-
     bridge_key_configured:
       !!BRIDGE_KEY,
 
+    gigachat_key_configured:
+      !!GIGACHAT_KEY,
+
     generation_in_progress:
       generationInProgress
-  });
-});
-
-// ============================================================
-// ROOT
-// ============================================================
-
-app.get("/", (req, res) => {
-  res.json({
-    ok: true,
-
-    service:
-      "content-constructor-gateway",
-
-    message:
-      "МОЙ КОНТЕНТ-КОНСТРУКТОР gateway is running",
-
-    endpoints: {
-      health:
-        "/health",
-
-      test_auth:
-        "/test-auth",
-
-      test_generate:
-        "/test-generate",
-
-      test_plan_1_5:
-        "/test-plan-1-5",
-
-      generate:
-        "POST /generate",
-
-      plan_1_5:
-        "POST /generate-plan-1-5",
-
-      plan_6_10:
-        "POST /generate-plan-6-10",
-
-      plan_11_15:
-        "POST /generate-plan-11-15",
-
-      plan_16_20:
-        "POST /generate-plan-16-20",
-
-      plan_21_25:
-        "POST /generate-plan-21-25",
-
-      plan_26_30:
-        "POST /generate-plan-26-30"
-    }
   });
 });
 
@@ -846,15 +1017,13 @@ app.get("/test-auth", async (req, res) => {
 
     res.json({
       ok: true,
-
-      stage:
-        "auth",
-
+      stage: "auth",
       token_received:
         !!token
     });
 
   } catch (error) {
+
     console.error(
       "AUTH ERROR:",
       error.message
@@ -862,10 +1031,7 @@ app.get("/test-auth", async (req, res) => {
 
     res.status(500).json({
       ok: false,
-
-      stage:
-        "auth",
-
+      stage: "auth",
       error:
         error.message
     });
@@ -893,23 +1059,18 @@ app.get("/test-generate", async (req, res) => {
           messages: [
             {
               role: "user",
-
               content:
                 "Ответь одним словом: Да"
             }
           ],
 
-          temperature:
-            0.2,
-
-          max_tokens:
-            10
+          temperature: 0.2,
+          max_tokens: 10
         },
         {
           httpsAgent,
 
-          timeout:
-            9000,
+          timeout: 12000,
 
           headers: {
             Authorization:
@@ -922,8 +1083,9 @@ app.get("/test-generate", async (req, res) => {
       );
 
     const result =
-      response.data?.choices?.[0]?.message?.content ||
-      "";
+      response.data
+        ?.choices?.[0]
+        ?.message?.content || "";
 
     res.json({
       ok: true,
@@ -945,9 +1107,24 @@ app.get("/test-generate", async (req, res) => {
     });
 
   } catch (error) {
+
     console.error(
-      "TEST GENERATE ERROR:",
+      "TEST GENERATE ERROR"
+    );
+
+    console.error(
+      "Message:",
       error.message
+    );
+
+    console.error(
+      "Status:",
+      error.response?.status
+    );
+
+    console.error(
+      "Response:",
+      error.response?.data
     );
 
     res.status(500).json({
@@ -972,40 +1149,29 @@ app.get("/test-generate", async (req, res) => {
 });
 
 // ============================================================
-// TEST 1-5 PLAN
+// TEST PLAN 1-5
 // ============================================================
 
 app.get("/test-plan-1-5", async (req, res) => {
   const startedAt = Date.now();
 
-  if (generationInProgress) {
-    return res.status(429).json({
-      ok: false,
-
-      test:
-        "plan-1-5",
-
-      error:
-        "Generation already in progress"
-    });
-  }
-
-  generationInProgress = true;
-
   try {
-    const result =
-      await generatePlanChunk({
-        startDay:
-          1,
+    const token =
+      await getAccessToken();
 
-        endDay:
-          5,
+    const prompt =
+      buildPlanChunkPrompt({
+        startDay: 1,
+        endDay: 5,
 
         businessInfo:
           "эксперт или предприниматель, который продаёт свои услуги или продукты",
 
         targetAudience:
           "потенциальные клиенты этого бизнеса",
+
+        offer:
+          "конкретная услуга или продукт бизнеса",
 
         contentGoal:
           "привлечь внимание, показать экспертность, вызвать доверие и привести к покупке",
@@ -1014,7 +1180,18 @@ app.get("/test-plan-1-5", async (req, res) => {
           "легко, уверенно, современно",
 
         previousPlan:
-          "",
+          ""
+      });
+
+    const result =
+      await generateWithGigaChat({
+        token,
+
+        prompt,
+
+        temperature: 0.35,
+
+        maxTokens: 550,
 
         label:
           "TEST PLAN 1-5"
@@ -1043,6 +1220,7 @@ app.get("/test-plan-1-5", async (req, res) => {
     });
 
   } catch (error) {
+
     res.status(500).json({
       ok: false,
 
@@ -1061,22 +1239,17 @@ app.get("/test-plan-1-5", async (req, res) => {
       time_ms:
         Date.now() - startedAt
     });
-
-  } finally {
-    generationInProgress = false;
   }
 });
 
 // ============================================================
-// PLAN ENDPOINTS
+// PLAN 1-5
 // ============================================================
-
-// DAYS 1-5
 
 app.post(
   "/generate-plan-1-5",
   async (req, res) => {
-    return handlePlanChunk(
+    await handlePlanChunk(
       req,
       res,
       1,
@@ -1085,12 +1258,14 @@ app.post(
   }
 );
 
-// DAYS 6-10
+// ============================================================
+// PLAN 6-10
+// ============================================================
 
 app.post(
   "/generate-plan-6-10",
   async (req, res) => {
-    return handlePlanChunk(
+    await handlePlanChunk(
       req,
       res,
       6,
@@ -1099,12 +1274,14 @@ app.post(
   }
 );
 
-// DAYS 11-15
+// ============================================================
+// PLAN 11-15
+// ============================================================
 
 app.post(
   "/generate-plan-11-15",
   async (req, res) => {
-    return handlePlanChunk(
+    await handlePlanChunk(
       req,
       res,
       11,
@@ -1113,12 +1290,14 @@ app.post(
   }
 );
 
-// DAYS 16-20
+// ============================================================
+// PLAN 16-20
+// ============================================================
 
 app.post(
   "/generate-plan-16-20",
   async (req, res) => {
-    return handlePlanChunk(
+    await handlePlanChunk(
       req,
       res,
       16,
@@ -1127,12 +1306,14 @@ app.post(
   }
 );
 
-// DAYS 21-25
+// ============================================================
+// PLAN 21-25
+// ============================================================
 
 app.post(
   "/generate-plan-21-25",
   async (req, res) => {
-    return handlePlanChunk(
+    await handlePlanChunk(
       req,
       res,
       21,
@@ -1141,12 +1322,14 @@ app.post(
   }
 );
 
-// DAYS 26-30
+// ============================================================
+// PLAN 26-30
+// ============================================================
 
 app.post(
   "/generate-plan-26-30",
   async (req, res) => {
-    return handlePlanChunk(
+    await handlePlanChunk(
       req,
       res,
       26,
@@ -1163,16 +1346,30 @@ app.post("/generate", async (req, res) => {
   const startedAt = Date.now();
 
   console.log("");
-  console.log("====================================");
-  console.log("GENERATE REQUEST RECEIVED");
-  console.log("====================================");
+  console.log(
+    "===================================="
+  );
+
+  console.log(
+    "GENERATE REQUEST RECEIVED"
+  );
+
+  console.log(
+    "===================================="
+  );
 
   try {
+
+    // --------------------------------------------------------
+    // BODY
+    // --------------------------------------------------------
+
     const {
       bridge_key,
       content_type,
       business_info,
       target_audience,
+      offer,
       content_goal,
       reels_topic,
       content_style
@@ -1193,29 +1390,63 @@ app.post("/generate", async (req, res) => {
     // --------------------------------------------------------
 
     if (!bridge_key) {
+
+      console.log(
+        "ERROR: bridge_key missing"
+      );
+
       return res.status(401).json({
         ok: false,
-
         error:
           "bridge_key is required"
       });
     }
 
     if (!BRIDGE_KEY) {
+
+      console.log(
+        "ERROR: BRIDGE_KEY not configured"
+      );
+
       return res.status(500).json({
         ok: false,
-
         error:
           "BRIDGE_KEY is not configured"
       });
     }
 
     if (bridge_key !== BRIDGE_KEY) {
+
+      console.log(
+        "ERROR: invalid bridge_key"
+      );
+
       return res.status(401).json({
+        ok: false,
+        error:
+          "Invalid bridge_key"
+      });
+    }
+
+    // --------------------------------------------------------
+    // CONTENT PLAN
+    // --------------------------------------------------------
+
+    const planRequest =
+      isContentPlan(content_type);
+
+    console.log(
+      "Content plan:",
+      planRequest
+    );
+
+    if (planRequest) {
+
+      return res.status(400).json({
         ok: false,
 
         error:
-          "Invalid bridge_key"
+          "Content plan must use the dedicated plan endpoints."
       });
     }
 
@@ -1224,78 +1455,111 @@ app.post("/generate", async (req, res) => {
     // --------------------------------------------------------
 
     if (!content_type) {
+
       return res.status(400).json({
         ok: false,
-
         error:
           "content_type is required"
       });
     }
 
     if (!business_info) {
+
       return res.status(400).json({
         ok: false,
-
         error:
           "business_info is required"
       });
     }
 
     if (!target_audience) {
+
       return res.status(400).json({
         ok: false,
-
         error:
           "target_audience is required"
       });
     }
 
     if (!content_goal) {
+
       return res.status(400).json({
         ok: false,
-
         error:
           "content_goal is required"
       });
     }
 
     if (!content_style) {
+
       return res.status(400).json({
         ok: false,
-
         error:
           "content_style is required"
       });
     }
 
-    // --------------------------------------------------------
-    // CONTENT PLAN
-    // --------------------------------------------------------
-
-    if (isContentPlan(content_type)) {
-      return res.status(400).json({
-        ok: false,
-
-        error:
-          "Для контент-плана используй отдельные endpoints: /generate-plan-1-5, /generate-plan-6-10, /generate-plan-11-15, /generate-plan-16-20, /generate-plan-21-25, /generate-plan-26-30"
-      });
-    }
-
-    // --------------------------------------------------------
-    // NORMAL CONTENT
-    // --------------------------------------------------------
-
     if (!reels_topic) {
+
       return res.status(400).json({
         ok: false,
-
         error:
           "reels_topic is required"
       });
     }
 
+    // --------------------------------------------------------
+    // LOG DATA
+    // --------------------------------------------------------
+
+    console.log(
+      "Business info:",
+      business_info
+    );
+
+    console.log(
+      "Target audience:",
+      target_audience
+    );
+
+    console.log(
+      "Offer:",
+      offer || "(not provided)"
+    );
+
+    console.log(
+      "Content goal:",
+      content_goal
+    );
+
+    console.log(
+      "Content style:",
+      content_style
+    );
+
+    console.log(
+      "Reels topic:",
+      reels_topic
+    );
+
+    // --------------------------------------------------------
+    // TOKEN
+    // --------------------------------------------------------
+
+    console.log(
+      "Getting GigaChat token..."
+    );
+
     const token =
       await getAccessToken();
+
+    console.log(
+      "OAuth token received"
+    );
+
+    // --------------------------------------------------------
+    // STANDARD CONTENT
+    // --------------------------------------------------------
 
     const prompt =
       buildPrompt({
@@ -1308,6 +1572,8 @@ app.post("/generate", async (req, res) => {
         targetAudience:
           target_audience,
 
+        offer,
+
         contentGoal:
           content_goal,
 
@@ -1318,44 +1584,62 @@ app.post("/generate", async (req, res) => {
           content_style
       });
 
-    const result =
+    console.log(
+      "Using standard content generation"
+    );
+
+    const generated =
       await generateWithGigaChat({
         token,
 
         prompt,
 
-        temperature:
-          0.75,
+        temperature: 0.75,
 
-        maxTokens:
-          1800,
+        maxTokens: 1800,
 
         label:
-          "NORMAL CONTENT"
+          "STANDARD CONTENT"
       });
+
+    const totalTime =
+      Date.now() - startedAt;
+
+    console.log(
+      "Total request time:",
+      totalTime,
+      "ms"
+    );
+
+    console.log(
+      "GENERATION SUCCESS"
+    );
+
+    console.log(
+      "===================================="
+    );
 
     return res.json({
       ok: true,
 
-      content_type:
-        content_type,
-
-      status:
-        result.status,
-
-      time_ms:
-        Date.now() - startedAt,
-
-      result_length:
-        result.result.length,
-
       reels_result:
-        result.result
+        generated.result
     });
 
   } catch (error) {
+
+    console.error("");
+
+    console.error(
+      "===================================="
+    );
+
     console.error(
       "GENERATE ERROR"
+    );
+
+    console.error(
+      "===================================="
     );
 
     console.error(
@@ -1373,20 +1657,27 @@ app.post("/generate", async (req, res) => {
       error.response?.data
     );
 
+    console.error(
+      "Total request time:",
+      Date.now() - startedAt,
+      "ms"
+    );
+
+    console.error(
+      "===================================="
+    );
+
     return res.status(500).json({
       ok: false,
 
-      message:
+      error:
         error.message,
 
       status:
         error.response?.status,
 
       response:
-        error.response?.data,
-
-      time_ms:
-        Date.now() - startedAt
+        error.response?.data
     });
   }
 });
@@ -1396,6 +1687,7 @@ app.post("/generate", async (req, res) => {
 // ============================================================
 
 app.use((req, res) => {
+
   res.status(404).json({
     ok: false,
 
@@ -1414,85 +1706,72 @@ app.use((req, res) => {
 // GLOBAL ERROR HANDLER
 // ============================================================
 
-app.use((error, req, res, next) => {
-  console.error(
-    "GLOBAL ERROR:",
-    error
-  );
+app.use(
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
 
-  res.status(500).json({
-    ok: false,
+    console.error(
+      "GLOBAL ERROR:",
+      error
+    );
 
-    error:
-      error.message ||
-      "Internal server error"
-  });
-});
+    if (res.headersSent) {
+      return next(error);
+    }
+
+    res.status(500).json({
+      ok: false,
+
+      error:
+        error.message ||
+        "Internal server error"
+    });
+  }
+);
 
 // ============================================================
-// START SERVER
+// SERVER START
 // ============================================================
 
-app.listen(PORT, () => {
-  console.log("");
-  console.log("====================================");
-  console.log("МОЙ КОНТЕНТ-КОНСТРУКТОР");
-  console.log("Gateway started");
-  console.log("====================================");
+app.listen(
+  PORT,
+  () => {
 
-  console.log(
-    "PORT:",
-    PORT
-  );
+    console.log("");
 
-  console.log(
-    "MODEL:",
-    GIGACHAT_MODEL
-  );
+    console.log(
+      "===================================="
+    );
 
-  console.log(
-    "GIGACHAT_KEY:",
-    GIGACHAT_KEY
-      ? "configured"
-      : "MISSING"
-  );
+    console.log(
+      `Content Constructor Gateway started on port ${PORT}`
+    );
 
-  console.log(
-    "BRIDGE_KEY:",
-    BRIDGE_KEY
-      ? "configured"
-      : "MISSING"
-  );
+    console.log(
+      "===================================="
+    );
 
-  console.log("");
+    console.log(
+      "GigaChat model:",
+      GIGACHAT_MODEL
+    );
 
-  console.log(
-    "PLAN ENDPOINTS:"
-  );
+    console.log(
+      "Bridge key configured:",
+      !!BRIDGE_KEY
+    );
 
-  console.log(
-    "POST /generate-plan-1-5"
-  );
+    console.log(
+      "GigaChat key configured:",
+      !!GIGACHAT_KEY
+    );
 
-  console.log(
-    "POST /generate-plan-6-10"
-  );
-
-  console.log(
-    "POST /generate-plan-11-15"
-  );
-
-  console.log(
-    "POST /generate-plan-16-20"
-  );
-
-  console.log(
-    "POST /generate-plan-21-25"
-  );
-
-  console.log(
-    "POST /generate-plan-26-30"
-  );
-
-  console.log("====================================");
-});
+    console.log(
+      "===================================="
+    );
+  }
+);
