@@ -29,7 +29,7 @@ const CHAT_URL =
   "https://gigachat.devices.sberbank.ru/api/v1/chat/completions";
 
 // ======================================================
-// HTTPS AGENT
+// HTTPS
 // ======================================================
 
 const httpsAgent = new https.Agent({
@@ -50,7 +50,7 @@ let accessTokenExpiresAt = 0;
 let generationInProgress = false;
 
 // ======================================================
-// BASIC HELPERS
+// HELPERS
 // ======================================================
 
 function now() {
@@ -73,17 +73,6 @@ function limitText(value, maxLength) {
   }
 
   return text.slice(-maxLength);
-}
-
-function isContentPlan(contentType) {
-  const value = safeString(contentType).toLowerCase();
-
-  return (
-    value.includes("план") ||
-    value.includes("30") ||
-    value.includes("контент-план") ||
-    value.includes("контент план")
-  );
 }
 
 // ======================================================
@@ -116,7 +105,9 @@ async function getAccessToken() {
           "application/x-www-form-urlencoded",
         RqUID: rqUid
       },
+
       httpsAgent,
+
       timeout: 8000
     }
   );
@@ -137,11 +128,12 @@ async function getAccessToken() {
 }
 
 // ======================================================
-// CONTENT INSTRUCTIONS
+// NORMAL CONTENT INSTRUCTIONS
 // ======================================================
 
 function getContentInstructions(contentType) {
-  const type = safeString(contentType).toLowerCase();
+  const type =
+    safeString(contentType).toLowerCase();
 
   if (
     type.includes("reels") ||
@@ -150,15 +142,17 @@ function getContentInstructions(contentType) {
     return `
 ФОРМАТ: REELS
 
-Создай готовую идею Reels.
+Создай готовый сценарий Reels.
 
 Структура:
+
 1. Хук
 2. Сценарий
 3. Финальная мысль
 4. CTA
 
-Текст должен быть практичным, живым и пригодным для публикации.
+Сценарий должен быть живым, конкретным
+и пригодным для записи и публикации.
 `;
   }
 
@@ -172,6 +166,7 @@ function getContentInstructions(contentType) {
 Создай готовую карусель.
 
 Структура:
+
 1. Заголовок первого слайда
 2. Слайды по порядку
 3. Финальный слайд
@@ -192,6 +187,7 @@ function getContentInstructions(contentType) {
 Создай готовый пост для Telegram.
 
 Структура:
+
 - сильное начало;
 - основная мысль;
 - полезное содержание;
@@ -207,7 +203,9 @@ function getContentInstructions(contentType) {
 
 Создай готовый экспертный пост.
 
-Текст должен быть живым, конкретным и пригодным для публикации.
+Текст должен быть живым,
+конкретным и пригодным для публикации.
+
 В конце добавь естественный CTA.
 `;
 }
@@ -230,20 +228,23 @@ function buildPrompt({
     "Конкретное предложение не указано. Не придумывай его.";
 
   return `
-Ты — профессиональный контент-маркетолог, контент-стратег и сценарист.
+Ты — профессиональный контент-маркетолог,
+контент-стратег и сценарист.
 
 Ты работаешь внутри Telegram-бота
 «МОЙ КОНТЕНТ-КОНСТРУКТОР».
 
-Твоя задача — создавать готовый контент для предпринимателей и экспертов.
+Твоя задача — создавать готовый контент
+для предпринимателей и экспертов.
 
-ВАЖНО:
+ВАЖНЫЕ ПРАВИЛА:
+
 - пиши только готовый результат;
-- не объясняй, как ты его создавал;
+- не объясняй процесс создания;
 - не упоминай искусственный интеллект;
 - не используй шаблонные фразы;
 - не придумывай факты о бизнесе;
-- не используй placeholders вроде [название компании], [имя эксперта] и т.п.;
+- не используй placeholders;
 - пиши естественным современным русским языком.
 
 ДАННЫЕ КЛИЕНТА:
@@ -273,7 +274,7 @@ ${getContentInstructions(contentType)}
 }
 
 // ======================================================
-// PLAN CHUNK PROMPT
+// PLAN PROMPT
 // ======================================================
 
 function buildPlanChunkPrompt({
@@ -290,10 +291,10 @@ function buildPlanChunkPrompt({
     safeString(offer) ||
     "Конкретное предложение не указано. Не придумывай его.";
 
-  const previousText = limitText(
-    previousPlan,
-    9000
-  );
+  // Ограничиваем предыдущий блок,
+  // чтобы запрос не становился огромным.
+  const previousText =
+    limitText(previousPlan, 9000);
 
   let previousSection = "";
 
@@ -303,8 +304,11 @@ function buildPlanChunkPrompt({
 
 ${previousText}
 
-Используй их только для понимания логики контент-плана.
-Не копируй темы и не повторяй формулировки.
+Используй их только для понимания логики
+и последовательности контент-плана.
+
+Не копируй предыдущие темы.
+Не повторяй предыдущие идеи.
 `;
   } else {
     previousSection = `
@@ -316,10 +320,11 @@ ${previousText}
   return `
 Ты — профессиональный контент-стратег.
 
-Ты создаёшь контент-план для Telegram-бота
+Ты создаёшь контент-план внутри Telegram-бота
 «МОЙ КОНТЕНТ-КОНСТРУКТОР».
 
-Нужно создать дни ${startDay}-${endDay} включительно.
+Сейчас нужно создать дни
+${startDay}-${endDay} включительно.
 
 ДАННЫЕ БИЗНЕСА:
 
@@ -342,21 +347,22 @@ ${previousSection}
 
 ЗАДАЧА:
 
-Создай следующие 5 дней контент-плана.
+Создай контент-план на следующие 5 дней.
 
-Контент должен последовательно вести аудиторию по воронке:
+Контент должен последовательно вести аудиторию
+по логике:
 
-внимание → интерес → экспертность → доверие → желание → действие.
+внимание → интерес → экспертность →
+доверие → желание → действие.
 
 Используй разные форматы:
+
 - Reels
 - пост
 - карусель
 - Telegram-пост
 
-Не обязательно использовать каждый формат одинаковое количество раз.
-
-КАЖДЫЙ ДЕНЬ ОБЯЗАТЕЛЬНО ОФОРМИ ТАК:
+КАЖДЫЙ ДЕНЬ ОФОРМИ СТРОГО ТАК:
 
 День N
 Формат:
@@ -365,32 +371,53 @@ ${previousSection}
 Задача:
 CTA:
 
+ГДЕ N — НОМЕР КОНКРЕТНОГО ДНЯ.
+
 ВАЖНЫЕ ПРАВИЛА:
 
-1. Обязательно создай ВСЕ 5 дней:
-${startDay}, ${startDay + 1}, ${startDay + 2}, ${startDay + 3}, ${endDay}.
+1. Создай ОБЯЗАТЕЛЬНО все 5 дней:
 
-2. Никогда не заканчивай ответ посреди дня.
+День ${startDay}
+День ${startDay + 1}
+День ${startDay + 2}
+День ${startDay + 3}
+День ${endDay}
 
-3. Каждый день делай компактным:
-примерно 60–90 слов.
+2. Не пропускай ни одного дня.
 
-4. Не пиши длинные сценарии.
+3. Не заканчивай ответ посреди дня.
 
-5. Не добавляй вступление перед первым днём.
+4. Каждый день делай достаточно компактным.
 
-6. Не добавляй заключение после последнего дня.
+5. Не пиши длинные сценарии.
 
-7. Не используй placeholders:
-[название], [имя], [ссылка], [продукт] и т.п.
+6. Не добавляй вступление перед первым днём.
 
-8. Не придумывай факты о бизнесе.
+7. Не добавляй заключение после последнего дня.
 
-9. Не повторяй предыдущие темы.
+8. Не используй placeholders:
 
-10. Ответ должен содержать ровно 5 дней.
+[название]
+[имя]
+[ссылка]
+[продукт]
 
-Верни только контент-план.
+и другие подобные конструкции.
+
+9. Не придумывай факты,
+которых нет в данных бизнеса.
+
+10. Не повторяй предыдущие темы.
+
+11. Не объясняй свои решения.
+
+12. Верни ТОЛЬКО контент-план.
+
+13. Ответ должен содержать ровно 5 дней.
+
+Начинай сразу с:
+
+День ${startDay}
 `;
 }
 
@@ -405,9 +432,11 @@ async function generateWithGigaChat(
     temperature = 0.35
   } = {}
 ) {
-  const token = await getAccessToken();
+  const token =
+    await getAccessToken();
 
-  const startedAt = Date.now();
+  const startedAt =
+    Date.now();
 
   console.log(
     `[${now()}] Sending request to GigaChat`
@@ -421,38 +450,42 @@ async function generateWithGigaChat(
     `[${now()}] max_tokens: ${maxTokens}`
   );
 
-  const response = await axios.post(
-    CHAT_URL,
-    {
-      model: GIGACHAT_MODEL,
+  const response =
+    await axios.post(
+      CHAT_URL,
+      {
+        model: GIGACHAT_MODEL,
 
-      messages: [
-        {
-          role: "system",
-          content:
-            "Ты профессиональный русскоязычный контент-маркетолог. Отвечай только готовым результатом без пояснений."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
+        messages: [
+          {
+            role: "system",
+            content:
+              "Ты профессиональный русскоязычный контент-маркетолог. Отвечай только готовым результатом без пояснений."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
 
-      temperature,
+        temperature,
 
-      max_tokens: maxTokens
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
+        max_tokens: maxTokens
       },
+      {
+        headers: {
+          Authorization:
+            `Bearer ${token}`,
 
-      httpsAgent,
+          "Content-Type":
+            "application/json"
+        },
 
-      timeout: 9000
-    }
-  );
+        httpsAgent,
+
+        timeout: 9000
+      }
+    );
 
   const elapsed =
     Date.now() - startedAt;
@@ -486,22 +519,33 @@ async function generateWithGigaChat(
     `[${now()}] result length: ${content.length} chars`
   );
 
-  if (finishReason === "length") {
+  if (
+    finishReason === "length"
+  ) {
     console.warn(
       `[${now()}] WARNING: GigaChat stopped because token limit was reached`
     );
   }
 
+  if (!content) {
+    console.error(
+      `[${now()}] WARNING: GigaChat returned EMPTY CONTENT`
+    );
+  }
+
   return {
     content: safeString(content),
+
     finishReason,
+
     usage,
+
     elapsed
   };
 }
 
 // ======================================================
-// PLAN GENERATOR
+// PLAN GENERATION
 // ======================================================
 
 async function generatePlanChunk({
@@ -536,49 +580,6 @@ async function generatePlanChunk({
 }
 
 // ======================================================
-// PLAN VALIDATION
-// ======================================================
-
-function validatePlanData(
-  result,
-  startDay,
-  endDay
-) {
-  const text = safeString(result);
-
-  if (!text) {
-    return {
-      valid: false,
-      reason: "empty_result"
-    };
-  }
-
-  for (
-    let day = startDay;
-    day <= endDay;
-    day++
-  ) {
-    const dayPattern =
-      new RegExp(
-        `День\\s*${day}\\b`,
-        "i"
-      );
-
-    if (!dayPattern.test(text)) {
-      return {
-        valid: false,
-        reason: `missing_day_${day}`
-      };
-    }
-  }
-
-  return {
-    valid: true,
-    reason: null
-  };
-}
-
-// ======================================================
 // PLAN HANDLER
 // ======================================================
 
@@ -590,8 +591,9 @@ async function handlePlanChunk(
     endDay
   }
 ) {
+  console.log("");
   console.log(
-    `\n==================================================`
+    "=================================================="
   );
 
   console.log(
@@ -601,6 +603,10 @@ async function handlePlanChunk(
   console.log(
     `[${now()}] Body received:`,
     JSON.stringify(req.body)
+  );
+
+  console.log(
+    "=================================================="
   );
 
   // --------------------------------------------------
@@ -650,7 +656,7 @@ async function handlePlanChunk(
     } = req.body;
 
     // ------------------------------------------------
-    // LOG INPUT
+    // INPUT LOGS
     // ------------------------------------------------
 
     console.log(
@@ -691,60 +697,85 @@ async function handlePlanChunk(
       await generatePlanChunk({
         startDay,
         endDay,
-        businessInfo: business_info,
-        targetAudience: target_audience,
-        offer,
-        contentGoal: content_goal,
-        contentStyle: content_style,
 
-        // ВАЖНО:
-        // передаём только предыдущий блок,
-        // а не весь накопленный план
-        previousPlan: previous_plan
+        businessInfo:
+          business_info,
+
+        targetAudience:
+          target_audience,
+
+        offer,
+
+        contentGoal:
+          content_goal,
+
+        contentStyle:
+          content_style,
+
+        previousPlan:
+          previous_plan
       });
 
     // ------------------------------------------------
-    // VALIDATE
+    // IMPORTANT
+    //
+    // НЕ ПРОВЕРЯЕМ наличие всех дней.
+    //
+    // Даже если GigaChat вернул неполный текст,
+    // отдаём этот текст Salebot.
     // ------------------------------------------------
 
-    const validation =
-      validatePlanData(
-        result.content,
-        startDay,
-        endDay
-      );
-
-    console.log(
-      `[${now()}] Validation:`,
-      JSON.stringify(validation)
-    );
-
-    // ------------------------------------------------
-    // RETURN
-    // ------------------------------------------------
-
-    if (!validation.valid) {
+    if (!result.content) {
       console.error(
-        `[${now()}] PLAN VALIDATION FAILED: ${validation.reason}`
+        `[${now()}] GigaChat returned empty result`
       );
 
-      return res.status(500).json({
+      return res.status(200).json({
         ok: false,
-        error: validation.reason,
-        finish_reason: result.finishReason,
-        usage: result.usage,
-        time_ms: result.elapsed,
-        reels_result: result.content
+
+        reels_result:
+          "Не удалось получить содержимое этого блока. Попробуйте запустить генерацию ещё раз.",
+
+        finish_reason:
+          result.finishReason,
+
+        truncated:
+          result.finishReason === "length",
+
+        usage:
+          result.usage,
+
+        time_ms:
+          result.elapsed,
+
+        model:
+          GIGACHAT_MODEL
       });
     }
+
+    // ------------------------------------------------
+    // RETURN TO SALEBOT
+    // ------------------------------------------------
+
+    console.log(
+      `[${now()}] Sending result to Salebot`
+    );
+
+    console.log(
+      `[${now()}] reels_result length:`,
+      result.content.length
+    );
+
+    console.log(
+      `[${now()}] finish_reason:`,
+      result.finishReason
+    );
 
     return res.status(200).json({
       ok: true,
 
-      start_day: startDay,
-      end_day: endDay,
-
-      reels_result: result.content,
+      reels_result:
+        result.content,
 
       finish_reason:
         result.finishReason,
@@ -752,14 +783,22 @@ async function handlePlanChunk(
       truncated:
         result.finishReason === "length",
 
-      usage: result.usage,
+      usage:
+        result.usage,
 
-      time_ms: result.elapsed,
+      time_ms:
+        result.elapsed,
 
-      model: GIGACHAT_MODEL
+      model:
+        GIGACHAT_MODEL
     });
 
   } catch (error) {
+    console.error("");
+    console.error(
+      "=================================================="
+    );
+
     console.error(
       `[${now()}] PLAN GENERATION ERROR`
     );
@@ -770,8 +809,22 @@ async function handlePlanChunk(
       error
     );
 
-    return res.status(500).json({
+    console.error(
+      "=================================================="
+    );
+
+    /*
+      ВАЖНО:
+
+      Возвращаем HTTP 200, чтобы Salebot не получал
+      обычную HTTP-ошибку и не терял структуру ответа.
+    */
+
+    return res.status(200).json({
       ok: false,
+
+      reels_result:
+        "⚠️ Не удалось сформировать эту часть контент-плана. Попробуйте запустить генерацию ещё раз.",
 
       error:
         error?.response?.data ||
@@ -785,10 +838,6 @@ async function handlePlanChunk(
     console.log(
       `[${now()}] PLAN REQUEST ${startDay}-${endDay} FINISHED`
     );
-
-    console.log(
-      `==================================================\n`
-    );
   }
 }
 
@@ -799,10 +848,18 @@ async function handlePlanChunk(
 app.get("/", (req, res) => {
   res.json({
     ok: true,
-    service: "content-constructor-gateway",
-    status: "online",
-    model: GIGACHAT_MODEL,
-    time: now()
+
+    service:
+      "content-constructor-gateway",
+
+    status:
+      "online",
+
+    model:
+      GIGACHAT_MODEL,
+
+    time:
+      now()
   });
 });
 
@@ -813,8 +870,12 @@ app.get("/", (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     ok: true,
-    status: "healthy",
-    time: now()
+
+    status:
+      "healthy",
+
+    time:
+      now()
   });
 });
 
@@ -822,177 +883,192 @@ app.get("/health", (req, res) => {
 // TEST AUTH
 // ======================================================
 
-app.get("/test-auth", async (req, res) => {
-  try {
-    const token =
-      await getAccessToken();
+app.get(
+  "/test-auth",
+  async (req, res) => {
+    try {
+      const token =
+        await getAccessToken();
 
-    res.json({
-      ok: true,
-      token_received: Boolean(token),
-      time: now()
-    });
+      res.json({
+        ok: true,
 
-  } catch (error) {
-    console.error(
-      "[TEST-AUTH ERROR]",
-      error?.response?.data ||
-      error?.message ||
-      error
-    );
+        token_received:
+          Boolean(token),
 
-    res.status(500).json({
-      ok: false,
-      error:
+        time:
+          now()
+      });
+
+    } catch (error) {
+      console.error(
+        "[TEST-AUTH ERROR]",
+
         error?.response?.data ||
         error?.message ||
-        "Auth error"
-    });
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+
+        error:
+          error?.response?.data ||
+          error?.message ||
+          "Auth error"
+      });
+    }
   }
-});
+);
 
 // ======================================================
 // TEST GENERATE
 // ======================================================
 
-app.get("/test-generate", async (req, res) => {
-  try {
-    const result =
-      await generateWithGigaChat(
-        `
-Напиши короткий пример одного
+app.get(
+  "/test-generate",
+  async (req, res) => {
+    try {
+      const result =
+        await generateWithGigaChat(
+          `
+Напиши короткий пример
 маркетингового поста для эксперта.
 
 Только готовый текст.
 `,
-        {
-          maxTokens: 300,
-          temperature: 0.35
-        }
-      );
+          {
+            maxTokens: 300,
 
-    res.json({
-      ok: true,
+            temperature: 0.35
+          }
+        );
 
-      reels_result:
-        result.content,
+      res.json({
+        ok: true,
 
-      finish_reason:
-        result.finishReason,
+        reels_result:
+          result.content,
 
-      usage:
-        result.usage,
+        finish_reason:
+          result.finishReason,
 
-      time_ms:
-        result.elapsed,
+        usage:
+          result.usage,
 
-      model:
-        GIGACHAT_MODEL
-    });
+        time_ms:
+          result.elapsed,
 
-  } catch (error) {
-    console.error(
-      "[TEST-GENERATE ERROR]",
-      error?.response?.data ||
-      error?.message ||
-      error
-    );
+        model:
+          GIGACHAT_MODEL
+      });
 
-    res.status(500).json({
-      ok: false,
-      error:
+    } catch (error) {
+      console.error(
+        "[TEST-GENERATE ERROR]",
+
         error?.response?.data ||
         error?.message ||
-        "Generation error"
-    });
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+
+        error:
+          error?.response?.data ||
+          error?.message ||
+          "Generation error"
+      });
+    }
   }
-});
+);
 
 // ======================================================
 // TEST PLAN 1-5
 // ======================================================
 
-app.get("/test-plan-1-5", async (req, res) => {
-  try {
-    const result =
-      await generatePlanChunk({
-        startDay: 1,
-        endDay: 5,
+app.get(
+  "/test-plan-1-5",
+  async (req, res) => {
+    try {
+      const result =
+        await generatePlanChunk({
+          startDay: 1,
 
-        businessInfo:
-          "Экспертный блог о маркетинге и контенте",
+          endDay: 5,
 
-        targetAudience:
-          "Предприниматели и эксперты, которым нужен поток клиентов из социальных сетей",
+          businessInfo:
+            "Экспертный блог о маркетинге и контенте",
 
-        offer:
-          "Консультации и помощь в создании контент-системы",
+          targetAudience:
+            "Предприниматели и эксперты, которым нужен поток клиентов из социальных сетей",
 
-        contentGoal:
-          "Привлечение внимания и получение заявок",
+          offer:
+            "Консультации и помощь в создании контент-системы",
 
-        contentStyle:
-          "Экспертный, простой, живой",
+          contentGoal:
+            "Привлечение внимания и получение заявок",
 
-        previousPlan: ""
+          contentStyle:
+            "Экспертный, простой, живой",
+
+          previousPlan:
+            ""
+        });
+
+      res.status(200).json({
+        ok:
+          Boolean(result.content),
+
+        test:
+          "plan-1-5",
+
+        status:
+          200,
+
+        time_ms:
+          result.elapsed,
+
+        result_length:
+          result.content.length,
+
+        finish_reason:
+          result.finishReason,
+
+        truncated:
+          result.finishReason === "length",
+
+        usage:
+          result.usage,
+
+        model:
+          GIGACHAT_MODEL,
+
+        reels_result:
+          result.content
       });
 
-    const validation =
-      validatePlanData(
-        result.content,
-        1,
-        5
-      );
+    } catch (error) {
+      console.error(
+        "[TEST-PLAN ERROR]",
 
-    res.json({
-      ok: validation.valid,
-
-      test: "plan-1-5",
-
-      status: 200,
-
-      time_ms:
-        result.elapsed,
-
-      result_length:
-        result.content.length,
-
-      finish_reason:
-        result.finishReason,
-
-      truncated:
-        result.finishReason === "length",
-
-      usage:
-        result.usage,
-
-      validation,
-
-      model:
-        GIGACHAT_MODEL,
-
-      reels_result:
-        result.content
-    });
-
-  } catch (error) {
-    console.error(
-      "[TEST-PLAN ERROR]",
-      error?.response?.data ||
-      error?.message ||
-      error
-    );
-
-    res.status(500).json({
-      ok: false,
-
-      error:
         error?.response?.data ||
         error?.message ||
-        "Plan test error"
-    });
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+
+        error:
+          error?.response?.data ||
+          error?.message ||
+          "Plan test error"
+      });
+    }
   }
-});
+);
 
 // ======================================================
 // PLAN 1-5
@@ -1103,273 +1179,315 @@ app.post(
 );
 
 // ======================================================
-// NORMAL CONTENT GENERATOR
+// NORMAL GENERATOR
 // ======================================================
 
-app.post("/generate", async (req, res) => {
-  console.log(
-    `\n==================================================`
-  );
-
-  console.log(
-    `[${now()}] GENERATE REQUEST RECEIVED`
-  );
-
-  console.log(
-    `[${now()}] Body exists:`,
-    Boolean(req.body)
-  );
-
-  console.log(
-    `[${now()}] Keys:`,
-    Object.keys(req.body || {})
-  );
-
-  console.log(
-    `[${now()}] Content-Type header:`,
-    req.headers["content-type"]
-  );
-
-  console.log(
-    `==================================================`
-  );
-
-  // --------------------------------------------------
-  // BRIDGE KEY
-  // --------------------------------------------------
-
-  if (
-    !BRIDGE_KEY ||
-    req.body?.bridge_key !== BRIDGE_KEY
-  ) {
-    console.error(
-      `[${now()}] Invalid bridge_key`
-    );
-
-    return res.status(403).json({
-      ok: false,
-      error: "Invalid bridge_key"
-    });
-  }
-
-  // --------------------------------------------------
-  // LOCK
-  // --------------------------------------------------
-
-  if (generationInProgress) {
-    console.warn(
-      `[${now()}] Generation already in progress`
-    );
-
-    return res.status(429).json({
-      ok: false,
-      error:
-        "Another generation is already in progress"
-    });
-  }
-
-  generationInProgress = true;
-
-  try {
-    const {
-      content_type,
-      business_info,
-      target_audience,
-      offer,
-      content_goal,
-      reels_topic,
-      content_style
-    } = req.body;
-
-    // ------------------------------------------------
-    // LOG DATA
-    // ------------------------------------------------
-
+app.post(
+  "/generate",
+  async (req, res) => {
+    console.log("");
     console.log(
-      `[${now()}] content_type:`,
-      content_type
+      "=================================================="
     );
 
     console.log(
-      `[${now()}] business_info length:`,
-      safeString(business_info).length
+      `[${now()}] GENERATE REQUEST RECEIVED`
     );
 
     console.log(
-      `[${now()}] target_audience length:`,
-      safeString(target_audience).length
+      `[${now()}] Body exists:`,
+      Boolean(req.body)
     );
 
     console.log(
-      `[${now()}] offer length:`,
-      safeString(offer).length
+      `[${now()}] Keys:`,
+      Object.keys(
+        req.body || {}
+      )
     );
 
     console.log(
-      `[${now()}] content_goal:`,
-      content_goal
+      `[${now()}] Content-Type:`,
+      req.headers["content-type"]
     );
 
     console.log(
-      `[${now()}] reels_topic length:`,
-      safeString(reels_topic).length
-    );
-
-    console.log(
-      `[${now()}] content_style:`,
-      content_style
+      "=================================================="
     );
 
     // ------------------------------------------------
-    // BUILD PROMPT
+    // BRIDGE KEY
     // ------------------------------------------------
 
-    const prompt =
-      buildPrompt({
-        contentType: content_type,
-        businessInfo: business_info,
-        targetAudience: target_audience,
-        offer,
-        contentGoal: content_goal,
-        reelsTopic: reels_topic,
-        contentStyle: content_style
+    if (
+      !BRIDGE_KEY ||
+      req.body?.bridge_key !== BRIDGE_KEY
+    ) {
+      console.error(
+        `[${now()}] Invalid bridge_key`
+      );
+
+      return res.status(403).json({
+        ok: false,
+
+        error:
+          "Invalid bridge_key"
       });
-
-    // ------------------------------------------------
-    // GENERATE
-    // ------------------------------------------------
-
-    const result =
-      await generateWithGigaChat(
-        prompt,
-        {
-          maxTokens: 800,
-          temperature: 0.45
-        }
-      );
-
-    // ------------------------------------------------
-    // EMPTY RESULT
-    // ------------------------------------------------
-
-    if (!result.content) {
-      throw new Error(
-        "GigaChat returned an empty result"
-      );
     }
 
     // ------------------------------------------------
-    // RESPONSE
+    // LOCK
     // ------------------------------------------------
 
-    return res.status(200).json({
-      ok: true,
+    if (generationInProgress) {
+      console.warn(
+        `[${now()}] Generation already in progress`
+      );
 
-      reels_result:
-        result.content,
+      return res.status(429).json({
+        ok: false,
 
-      finish_reason:
-        result.finishReason,
+        error:
+          "Another generation is already in progress"
+      });
+    }
 
-      truncated:
-        result.finishReason === "length",
+    generationInProgress = true;
 
-      usage:
-        result.usage,
+    try {
+      const {
+        content_type,
+        business_info,
+        target_audience,
+        offer,
+        content_goal,
+        reels_topic,
+        content_style
+      } = req.body;
 
-      time_ms:
-        result.elapsed,
+      console.log(
+        `[${now()}] content_type:`,
+        content_type
+      );
 
-      model:
-        GIGACHAT_MODEL
-    });
+      console.log(
+        `[${now()}] business_info length:`,
+        safeString(
+          business_info
+        ).length
+      );
 
-  } catch (error) {
-    console.error(
-      `[${now()}] GENERATE ERROR`
-    );
+      console.log(
+        `[${now()}] target_audience length:`,
+        safeString(
+          target_audience
+        ).length
+      );
 
-    console.error(
-      error?.response?.data ||
-      error?.message ||
-      error
-    );
+      console.log(
+        `[${now()}] offer length:`,
+        safeString(
+          offer
+        ).length
+      );
 
-    return res.status(500).json({
-      ok: false,
+      console.log(
+        `[${now()}] content_goal:`,
+        content_goal
+      );
 
-      error:
+      console.log(
+        `[${now()}] reels_topic length:`,
+        safeString(
+          reels_topic
+        ).length
+      );
+
+      console.log(
+        `[${now()}] content_style:`,
+        content_style
+      );
+
+      const prompt =
+        buildPrompt({
+          contentType:
+            content_type,
+
+          businessInfo:
+            business_info,
+
+          targetAudience:
+            target_audience,
+
+          offer,
+
+          contentGoal:
+            content_goal,
+
+          reelsTopic:
+            reels_topic,
+
+          contentStyle:
+            content_style
+        });
+
+      const result =
+        await generateWithGigaChat(
+          prompt,
+          {
+            maxTokens: 800,
+
+            temperature: 0.45
+          }
+        );
+
+      if (!result.content) {
+        return res.status(200).json({
+          ok: false,
+
+          reels_result:
+            "⚠️ Не удалось получить ответ от генератора. Попробуйте ещё раз.",
+
+          finish_reason:
+            result.finishReason,
+
+          usage:
+            result.usage,
+
+          time_ms:
+            result.elapsed,
+
+          model:
+            GIGACHAT_MODEL
+        });
+      }
+
+      return res.status(200).json({
+        ok: true,
+
+        reels_result:
+          result.content,
+
+        finish_reason:
+          result.finishReason,
+
+        truncated:
+          result.finishReason === "length",
+
+        usage:
+          result.usage,
+
+        time_ms:
+          result.elapsed,
+
+        model:
+          GIGACHAT_MODEL
+      });
+
+    } catch (error) {
+      console.error(
+        `[${now()}] GENERATE ERROR`
+      );
+
+      console.error(
         error?.response?.data ||
         error?.message ||
-        "Unknown generation error"
-    });
+        error
+      );
 
-  } finally {
-    generationInProgress = false;
+      return res.status(200).json({
+        ok: false,
+
+        reels_result:
+          "⚠️ Не удалось сгенерировать контент. Попробуйте ещё раз.",
+
+        error:
+          error?.response?.data ||
+          error?.message ||
+          "Unknown generation error"
+      });
+
+    } finally {
+      generationInProgress = false;
+    }
   }
-});
+);
 
 // ======================================================
 // 404
 // ======================================================
 
-app.use((req, res) => {
-  res.status(404).json({
-    ok: false,
-    error: "Endpoint not found",
-    path: req.path,
-    method: req.method
-  });
-});
+app.use(
+  (req, res) => {
+    res.status(404).json({
+      ok: false,
+
+      error:
+        "Endpoint not found",
+
+      path:
+        req.path,
+
+      method:
+        req.method
+    });
+  }
+);
 
 // ======================================================
 // GLOBAL ERROR HANDLER
 // ======================================================
 
-app.use((err, req, res, next) => {
-  console.error(
-    `[${now()}] GLOBAL ERROR`,
-    err
-  );
+app.use(
+  (err, req, res, next) => {
+    console.error(
+      `[${now()}] GLOBAL ERROR`,
+      err
+    );
 
-  res.status(500).json({
-    ok: false,
-    error:
-      err?.message ||
-      "Internal server error"
-  });
-});
+    res.status(500).json({
+      ok: false,
+
+      error:
+        err?.message ||
+        "Internal server error"
+    });
+  }
+);
 
 // ======================================================
 // START SERVER
 // ======================================================
 
-app.listen(PORT, () => {
-  console.log(
-    `==================================================`
-  );
+app.listen(
+  PORT,
+  () => {
+    console.log(
+      "=================================================="
+    );
 
-  console.log(
-    `CONTENT CONSTRUCTOR GATEWAY`
-  );
+    console.log(
+      "CONTENT CONSTRUCTOR GATEWAY"
+    );
 
-  console.log(
-    `Server started on port ${PORT}`
-  );
+    console.log(
+      `Server started on port ${PORT}`
+    );
 
-  console.log(
-    `Model: ${GIGACHAT_MODEL}`
-  );
+    console.log(
+      `Model: ${GIGACHAT_MODEL}`
+    );
 
-  console.log(
-    `Bridge key configured: ${Boolean(BRIDGE_KEY)}`
-  );
+    console.log(
+      `Bridge key configured: ${Boolean(BRIDGE_KEY)}`
+    );
 
-  console.log(
-    `GigaChat key configured: ${Boolean(GIGACHAT_KEY)}`
-  );
+    console.log(
+      `GigaChat key configured: ${Boolean(GIGACHAT_KEY)}`
+    );
 
-  console.log(
-    `==================================================`
-  );
-});
+    console.log(
+      "=================================================="
+    );
+  }
+);
