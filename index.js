@@ -154,7 +154,6 @@ async function askGigaChatInternal(
       return result;
 
     } catch (error) {
-
       const status = error.response?.status;
 
       console.error(
@@ -163,20 +162,14 @@ async function askGigaChatInternal(
         error.response?.data || error.message
       );
 
-      // ----------------------------------------------
       // 401 — token expired
-      // ----------------------------------------------
-
       if (status === 401 && attempt < 3) {
         cachedToken = null;
         tokenExpiresAt = 0;
         continue;
       }
 
-      // ----------------------------------------------
       // 429 — too many requests
-      // ----------------------------------------------
-
       if (status === 429 && attempt < 3) {
         const delay = attempt === 1 ? 3000 : 6000;
 
@@ -252,7 +245,6 @@ function checkBridgeKey(req, res) {
 // ==================================================
 
 function buildPrompt(data) {
-
   const {
     content_type,
     business_info,
@@ -394,9 +386,8 @@ ${content_type || "не указан"}
 - ирония
 - эмоциональные образы
 - игровые механики
-- рекламные формулировки
 - необычные концепции
-- художественные сценарии
+- рекламные формулировки
 
 Например:
 
@@ -437,11 +428,9 @@ ${content_type || "не указан"}
 // ==================================================
 
 app.post("/generate", async (req, res) => {
-
   console.log("GENERATE REQUEST RECEIVED");
 
   try {
-
     if (!checkBridgeKey(req, res)) {
       return;
     }
@@ -474,7 +463,6 @@ app.post("/generate", async (req, res) => {
     });
 
   } catch (error) {
-
     console.error(
       "GENERATE ERROR:",
       error.response?.data || error.message
@@ -496,7 +484,6 @@ app.post("/generate", async (req, res) => {
 // ==================================================
 
 function buildPlanChunkPrompt(data) {
-
   const {
     start_day,
     end_day,
@@ -688,6 +675,77 @@ ${previous_plan || "Это первый блок. Предыдущих дней 
 или бизнесе.
 
 ==================================================
+НЕ ПРИДУМЫВАЙ СЦЕНУ КАК ФАКТ
+==================================================
+
+Если ты предлагаешь визуальную сцену,
+предмет, человека, действие или обстановку,
+которых нет в данных бизнеса, формулируй это
+именно как ВАРИАНТ КОНТЕНТА, а не как описание
+того, что реально существует или происходит.
+
+Например:
+
+❌ «Покажите столик, за которым сидят гости»
+если наличие столиков и гостей не подтверждено.
+
+✅ «Можно построить ролик вокруг идеи паузы
+и показать любой доступный визуальный материал,
+связанный с кофе или десертами».
+
+❌ «Пар поднимается над чашкой»
+если такая характеристика не подтверждена.
+
+✅ «Можно использовать крупный план чашки
+как визуальный образ».
+
+❌ «Бариста готовит кофе на кофемашине»
+если бариста и кофемашина не указаны.
+
+✅ «Можно показать процесс приготовления,
+если такой процесс доступен для съёмки».
+
+Никогда не добавляй людей, мебель,
+оборудование, интерьер, посуду, упаковку,
+витрины или другие предметы только потому,
+что они типичны для данного вида бизнеса.
+
+==================================================
+НЕ ПРИДУМЫВАЙ ЭКСПЕРТНЫЕ ФАКТЫ
+==================================================
+
+Не добавляй самостоятельно медицинские,
+научные, технологические или профессиональные
+утверждения.
+
+Например, нельзя самостоятельно утверждать:
+
+- почему кофе горчит;
+- как именно влияет температура;
+- какие характеристики имеет продукт;
+- почему используется определённый ингредиент;
+- какое оборудование влияет на результат;
+- какие технологии применяются;
+- какие свойства имеет продукт.
+
+Если такие сведения не даны пользователем,
+не превращай их в экспертный факт.
+
+Вместо этого можно сделать КОНТЕНТ-КОНЦЕПЦИЮ
+на тему:
+
+«Какие мифы о кофе вы слышали?»
+
+или:
+
+«Разберём, какие вкусы люди ищут
+в любимом напитке».
+
+Но конкретные ответы должны появляться
+только тогда, когда соответствующие факты
+подтверждены пользователем.
+
+==================================================
 АССОРТИМЕНТ — ОСОБОЕ ПРАВИЛО
 ==================================================
 
@@ -877,8 +935,6 @@ CTA:
 
 Каждый день должен быть полностью завершён.
 
-Нельзя обрывать день на середине.
-
 Последний день блока также обязательно
 должен содержать:
 
@@ -946,13 +1002,18 @@ CTA
     которых пользователь не называл.
 16. Нет конкретных характеристик продуктов,
     которых пользователь не подтверждал.
-17. Город не используется как доказательство
+17. Нет выдуманных предметов интерьера.
+18. Нет выдуманных посетителей.
+19. Нет выдуманных действий сотрудников.
+20. Нет непроверенных экспертных утверждений.
+21. Нет непроверенных технологических объяснений.
+22. Город не используется как доказательство
     происхождения продукта.
-18. Нет повторов из предыдущего блока.
-19. Нет слова «ДЕНЯ».
-20. Не используется «свайпните вверх».
-21. Нет вступления.
-22. Нет заключения.
+23. Нет повторов из предыдущего блока.
+24. Нет слова «ДЕНЯ».
+25. Не используется «свайпните вверх».
+26. Нет вступления.
+27. Нет заключения.
 
 Форматируй ответ строго так:
 
@@ -982,7 +1043,6 @@ CTA: ...
 // ==================================================
 
 async function generatePlanChunk(data) {
-
   const prompt = buildPlanChunkPrompt(data);
 
   return askGigaChat(
@@ -1007,14 +1067,17 @@ async function generatePlanChunk(data) {
 // PLAN REQUEST HANDLER
 // ==================================================
 
-async function handlePlanRequest(req, res, startDay, endDay) {
-
+async function handlePlanRequest(
+  req,
+  res,
+  startDay,
+  endDay
+) {
   console.log(
     `PLAN REQUEST RECEIVED: ${startDay}-${endDay}`
   );
 
   try {
-
     if (!checkBridgeKey(req, res)) {
       return;
     }
@@ -1044,7 +1107,6 @@ async function handlePlanRequest(req, res, startDay, endDay) {
     });
 
   } catch (error) {
-
     console.error(
       `PLAN ERROR ${startDay}-${endDay}:`,
       error.response?.data || error.message
@@ -1065,59 +1127,77 @@ async function handlePlanRequest(req, res, startDay, endDay) {
 // PLAN ENDPOINTS
 // ==================================================
 
-app.post("/generate-plan-1-5", async (req, res) => {
-  return handlePlanRequest(
-    req,
-    res,
-    1,
-    5
-  );
-});
+app.post(
+  "/generate-plan-1-5",
+  async (req, res) => {
+    return handlePlanRequest(
+      req,
+      res,
+      1,
+      5
+    );
+  }
+);
 
-app.post("/generate-plan-6-10", async (req, res) => {
-  return handlePlanRequest(
-    req,
-    res,
-    6,
-    10
-  );
-});
+app.post(
+  "/generate-plan-6-10",
+  async (req, res) => {
+    return handlePlanRequest(
+      req,
+      res,
+      6,
+      10
+    );
+  }
+);
 
-app.post("/generate-plan-11-15", async (req, res) => {
-  return handlePlanRequest(
-    req,
-    res,
-    11,
-    15
-  );
-});
+app.post(
+  "/generate-plan-11-15",
+  async (req, res) => {
+    return handlePlanRequest(
+      req,
+      res,
+      11,
+      15
+    );
+  }
+);
 
-app.post("/generate-plan-16-20", async (req, res) => {
-  return handlePlanRequest(
-    req,
-    res,
-    16,
-    20
-  );
-});
+app.post(
+  "/generate-plan-16-20",
+  async (req, res) => {
+    return handlePlanRequest(
+      req,
+      res,
+      16,
+      20
+    );
+  }
+);
 
-app.post("/generate-plan-21-25", async (req, res) => {
-  return handlePlanRequest(
-    req,
-    res,
-    21,
-    25
-  );
-});
+app.post(
+  "/generate-plan-21-25",
+  async (req, res) => {
+    return handlePlanRequest(
+      req,
+      res,
+      21,
+      25
+    );
+  }
+);
 
-app.post("/generate-plan-26-30", async (req, res) => {
-  return handlePlanRequest(
-    req,
-    res,
-    26,
-    30
-  );
-});
+app.post(
+  "/generate-plan-26-30",
+  async (req, res) => {
+    return handlePlanRequest(
+      req,
+      res,
+      26,
+      30
+    );
+  }
+);
 
 
 // ==================================================
@@ -1125,14 +1205,12 @@ app.post("/generate-plan-26-30", async (req, res) => {
 // ==================================================
 
 app.get("/", (req, res) => {
-
   res.json({
     ok: true,
     service: "content-constructor-gateway",
     model: MODEL,
     status: "working"
   });
-
 });
 
 
@@ -1141,12 +1219,10 @@ app.get("/", (req, res) => {
 // ==================================================
 
 app.get("/health", (req, res) => {
-
   res.json({
     ok: true,
     status: "healthy"
   });
-
 });
 
 
@@ -1155,9 +1231,7 @@ app.get("/health", (req, res) => {
 // ==================================================
 
 app.get("/test-auth", async (req, res) => {
-
   try {
-
     const token = await getGigaChatToken();
 
     res.json({
@@ -1166,7 +1240,6 @@ app.get("/test-auth", async (req, res) => {
     });
 
   } catch (error) {
-
     console.error(
       "TEST AUTH ERROR:",
       error.response?.data || error.message
@@ -1178,9 +1251,7 @@ app.get("/test-auth", async (req, res) => {
         error.response?.data ||
         error.message
     });
-
   }
-
 });
 
 
@@ -1189,11 +1260,9 @@ app.get("/test-auth", async (req, res) => {
 // ==================================================
 
 app.get("/test-generate", async (req, res) => {
-
   const start = Date.now();
 
   try {
-
     const result = await askGigaChat(
       [
         {
@@ -1222,7 +1291,6 @@ app.get("/test-generate", async (req, res) => {
     });
 
   } catch (error) {
-
     console.error(
       "TEST GENERATE ERROR:",
       error.response?.data || error.message
@@ -1234,9 +1302,7 @@ app.get("/test-generate", async (req, res) => {
         error.response?.data ||
         error.message
     });
-
   }
-
 });
 
 
@@ -1245,13 +1311,10 @@ app.get("/test-generate", async (req, res) => {
 // ==================================================
 
 app.get("/test-plan-1-5", async (req, res) => {
-
   const start = Date.now();
 
   try {
-
     const result = await generatePlanChunk({
-
       start_day: 1,
       end_day: 5,
 
@@ -1274,48 +1337,29 @@ app.get("/test-plan-1-5", async (req, res) => {
     });
 
     res.json({
-
       ok: true,
-
       test: "plan-1-5",
-
       status: 200,
-
-      time_ms:
-        Date.now() - start,
-
-      result_length:
-        result.length,
-
+      time_ms: Date.now() - start,
+      result_length: result.length,
       model: MODEL,
-
-      finish_reason:
-        "stop",
-
-      reels_result:
-        result
-
+      finish_reason: "stop",
+      reels_result: result
     });
 
   } catch (error) {
-
     console.error(
       "TEST PLAN ERROR:",
       error.response?.data || error.message
     );
 
     res.status(500).json({
-
       ok: false,
-
       error:
         error.response?.data ||
         error.message
-
     });
-
   }
-
 });
 
 
@@ -1324,12 +1368,10 @@ app.get("/test-plan-1-5", async (req, res) => {
 // ==================================================
 
 app.use((req, res) => {
-
   res.status(404).json({
     ok: false,
     error: "Not found"
   });
-
 });
 
 
@@ -1338,7 +1380,6 @@ app.use((req, res) => {
 // ==================================================
 
 app.listen(PORT, () => {
-
   console.log(
     `Server started on port ${PORT}`
   );
@@ -1350,5 +1391,4 @@ app.listen(PORT, () => {
   console.log(
     `Chat URL: ${CHAT_URL}`
   );
-
 });
