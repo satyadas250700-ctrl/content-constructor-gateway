@@ -43,7 +43,6 @@ const httpsAgent = new https.Agent({
 let accessToken = null;
 let tokenExpiresAt = 0;
 
-// Не допускаем одновременный запуск нескольких генераций
 let generationInProgress = false;
 
 // ============================================================
@@ -124,10 +123,6 @@ function getContentInstructions(contentType) {
     String(contentType || "")
       .toLowerCase();
 
-  // ----------------------------------------------------------
-  // TELEGRAM
-  // ----------------------------------------------------------
-
   if (
     type.includes("telegram") ||
     type.includes("тг") ||
@@ -156,10 +151,6 @@ function getContentInstructions(contentType) {
 `;
   }
 
-  // ----------------------------------------------------------
-  // REELS
-  // ----------------------------------------------------------
-
   if (type.includes("reels")) {
     return `
 СОЗДАЙ ГОТОВЫЙ СЦЕНАРИЙ REELS.
@@ -186,10 +177,6 @@ CTA:
 `;
   }
 
-  // ----------------------------------------------------------
-  // POST
-  // ----------------------------------------------------------
-
   if (
     type.includes("пост") &&
     !type.includes("telegram") &&
@@ -213,10 +200,6 @@ CTA:
 `;
   }
 
-  // ----------------------------------------------------------
-  // CAROUSEL
-  // ----------------------------------------------------------
-
   if (
     type.includes("карусель") ||
     type.includes("carousel")
@@ -238,10 +221,6 @@ CTA:
 Выдай только готовую карусель.
 `;
   }
-
-  // ----------------------------------------------------------
-  // FALLBACK
-  // ----------------------------------------------------------
 
   return `
 Создай качественный готовый контент
@@ -353,7 +332,7 @@ ${getContentInstructions(contentType)}
 }
 
 // ============================================================
-// BUILD STRICT 5-DAY PLAN CHUNK PROMPT
+// BUILD STRICT PLAN CHUNK PROMPT
 // ============================================================
 
 function buildPlanChunkPrompt({
@@ -572,7 +551,6 @@ ${contextBlock}
 - скидки;
 - акции;
 - цифры;
-- статистику;
 - медицинские факты;
 - научные факты;
 - технические факты;
@@ -1001,22 +979,29 @@ async function generateWithGigaChat({
   maxTokens,
   label
 }) {
-  const startedAt = Date.now();
+  const startedAt =
+    Date.now();
 
   console.log(
     `[${label}] Sending request to GigaChat...`
   );
 
   try {
-    const response = await axios.post(
-      CHAT_URL,
-      {
-        model: GIGACHAT_MODEL,
 
-        messages: [
-          {
-            role: "system",
-            content: `
+    const response =
+      await axios.post(
+        CHAT_URL,
+
+        {
+          model:
+            GIGACHAT_MODEL,
+
+          messages: [
+            {
+              role:
+                "system",
+
+              content: `
 Ты профессиональный контент-маркетолог
 и контент-стратег.
 
@@ -1063,31 +1048,44 @@ async function generateWithGigaChat({
 без нового факта — используй
 более универсальную формулировку.
 `
-          },
+            },
 
-          {
-            role: "user",
-            content: prompt
+            {
+              role:
+                "user",
+
+              content:
+                prompt
+            }
+          ],
+
+          temperature,
+
+          max_tokens:
+            maxTokens
+        },
+
+        {
+          httpsAgent,
+
+          // ВАЖНО:
+          // Было 9000 мс.
+          // Увеличиваем до 20000 мс,
+          // потому что контент-план реально
+          // может генерироваться дольше 9 секунд.
+
+          timeout:
+            20000,
+
+          headers: {
+            Authorization:
+              `Bearer ${token}`,
+
+            "Content-Type":
+              "application/json"
           }
-        ],
-
-        temperature,
-        max_tokens: maxTokens
-      },
-      {
-        httpsAgent,
-
-        timeout: 9000,
-
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-
-          "Content-Type":
-            "application/json"
         }
-      }
-    );
+      );
 
     const result =
       response.data?.choices?.[0]?.message?.content ||
@@ -1117,7 +1115,8 @@ async function generateWithGigaChat({
     return {
       result,
       elapsed,
-      status: response.status
+      status:
+        response.status
     };
 
   } catch (error) {
@@ -1165,6 +1164,7 @@ function validatePlanData({
   content_goal,
   content_style
 }) {
+
   if (!bridge_key) {
     return "bridge_key is required";
   }
@@ -1210,27 +1210,39 @@ async function generatePlanChunk({
   previousPlan,
   label
 }) {
+
   const token =
     await getAccessToken();
 
   const prompt =
     buildPlanChunkPrompt({
+
       startDay,
+
       endDay,
+
       businessInfo,
+
       targetAudience,
+
       contentGoal,
+
       contentStyle,
+
       previousPlan
     });
 
   return generateWithGigaChat({
+
     token,
+
     prompt,
 
-    temperature: 0.35,
+    temperature:
+      0.35,
 
-    maxTokens: 1100,
+    maxTokens:
+      1100,
 
     label
   });
@@ -1246,10 +1258,12 @@ async function handlePlanChunk(
   startDay,
   endDay
 ) {
+
   const startedAt =
     Date.now();
 
   console.log("");
+
   console.log(
     "===================================="
   );
@@ -1263,8 +1277,12 @@ async function handlePlanChunk(
   );
 
   if (generationInProgress) {
+
     return res.status(429).json({
-      ok: false,
+
+      ok:
+        false,
+
       error:
         "Generation already in progress. Please try again later."
     });
@@ -1281,10 +1299,15 @@ async function handlePlanChunk(
 
   const validationError =
     validatePlanData({
+
       bridge_key,
+
       business_info,
+
       target_audience,
+
       content_goal,
+
       content_style
     });
 
@@ -1297,8 +1320,12 @@ async function handlePlanChunk(
         : 400;
 
     return res.status(status).json({
-      ok: false,
-      error: validationError
+
+      ok:
+        false,
+
+      error:
+        validationError
     });
   }
 
@@ -1313,7 +1340,9 @@ async function handlePlanChunk(
 
     const result =
       await generatePlanChunk({
+
         startDay,
+
         endDay,
 
         businessInfo:
@@ -1336,7 +1365,9 @@ async function handlePlanChunk(
       });
 
     return res.json({
-      ok: true,
+
+      ok:
+        true,
 
       start_day:
         startDay,
@@ -1363,7 +1394,9 @@ async function handlePlanChunk(
   } catch (error) {
 
     return res.status(500).json({
-      ok: false,
+
+      ok:
+        false,
 
       start_day:
         startDay,
@@ -1395,120 +1428,137 @@ async function handlePlanChunk(
 // HEALTH
 // ============================================================
 
-app.get("/health", (req, res) => {
+app.get(
+  "/health",
+  (req, res) => {
 
-  res.json({
-    ok: true,
+    res.json({
 
-    service:
-      "content-constructor-gateway",
+      ok:
+        true,
 
-    model:
-      GIGACHAT_MODEL,
+      service:
+        "content-constructor-gateway",
 
-    gigachat_key_configured:
-      !!GIGACHAT_KEY,
+      model:
+        GIGACHAT_MODEL,
 
-    bridge_key_configured:
-      !!BRIDGE_KEY,
+      gigachat_key_configured:
+        !!GIGACHAT_KEY,
 
-    generation_in_progress:
-      generationInProgress
-  });
-});
+      bridge_key_configured:
+        !!BRIDGE_KEY,
+
+      generation_in_progress:
+        generationInProgress
+    });
+  }
+);
 
 // ============================================================
 // ROOT
 // ============================================================
 
-app.get("/", (req, res) => {
+app.get(
+  "/",
+  (req, res) => {
 
-  res.json({
-    ok: true,
+    res.json({
 
-    service:
-      "content-constructor-gateway",
+      ok:
+        true,
 
-    message:
-      "МОЙ КОНТЕНТ-КОНСТРУКТОР gateway is running",
+      service:
+        "content-constructor-gateway",
 
-    endpoints: {
+      message:
+        "МОЙ КОНТЕНТ-КОНСТРУКТОР gateway is running",
 
-      health:
-        "/health",
+      endpoints: {
 
-      test_auth:
-        "/test-auth",
+        health:
+          "/health",
 
-      test_generate:
-        "/test-generate",
+        test_auth:
+          "/test-auth",
 
-      test_plan_1_5:
-        "/test-plan-1-5",
+        test_generate:
+          "/test-generate",
 
-      generate:
-        "POST /generate",
+        test_plan_1_5:
+          "/test-plan-1-5",
 
-      plan_1_5:
-        "POST /generate-plan-1-5",
+        generate:
+          "POST /generate",
 
-      plan_6_10:
-        "POST /generate-plan-6-10",
+        plan_1_5:
+          "POST /generate-plan-1-5",
 
-      plan_11_15:
-        "POST /generate-plan-11-15",
+        plan_6_10:
+          "POST /generate-plan-6-10",
 
-      plan_16_20:
-        "POST /generate-plan-16-20",
+        plan_11_15:
+          "POST /generate-plan-11-15",
 
-      plan_21_25:
-        "POST /generate-plan-21-25",
+        plan_16_20:
+          "POST /generate-plan-16-20",
 
-      plan_26_30:
-        "POST /generate-plan-26-30"
-    }
-  });
-});
+        plan_21_25:
+          "POST /generate-plan-21-25",
+
+        plan_26_30:
+          "POST /generate-plan-26-30"
+      }
+    });
+  }
+);
 
 // ============================================================
 // TEST AUTH
 // ============================================================
 
-app.get("/test-auth", async (req, res) => {
+app.get(
+  "/test-auth",
+  async (req, res) => {
 
-  try {
+    try {
 
-    const token =
-      await getAccessToken();
+      const token =
+        await getAccessToken();
 
-    res.json({
-      ok: true,
+      res.json({
 
-      stage:
-        "auth",
+        ok:
+          true,
 
-      token_received:
-        !!token
-    });
+        stage:
+          "auth",
 
-  } catch (error) {
+        token_received:
+          !!token
+      });
 
-    console.error(
-      "AUTH ERROR:",
-      error.message
-    );
+    } catch (error) {
 
-    res.status(500).json({
-      ok: false,
-
-      stage:
-        "auth",
-
-      error:
+      console.error(
+        "AUTH ERROR:",
         error.message
-    });
+      );
+
+      res.status(500).json({
+
+        ok:
+          false,
+
+        stage:
+          "auth",
+
+        error:
+          error.message
+      });
+    }
   }
-});
+);
 
 // ============================================================
 // TEST BASIC GENERATION
@@ -1528,6 +1578,7 @@ app.get(
 
       const response =
         await axios.post(
+
           CHAT_URL,
 
           {
@@ -1536,7 +1587,8 @@ app.get(
 
             messages: [
               {
-                role: "user",
+                role:
+                  "user",
 
                 content:
                   "Ответь одним словом: Да"
@@ -1554,9 +1606,10 @@ app.get(
             httpsAgent,
 
             timeout:
-              9000,
+              20000,
 
             headers: {
+
               Authorization:
                 `Bearer ${token}`,
 
@@ -1636,7 +1689,9 @@ app.get(
     if (generationInProgress) {
 
       return res.status(429).json({
-        ok: false,
+
+        ok:
+          false,
 
         test:
           "plan-1-5",
@@ -1816,6 +1871,7 @@ app.post(
       Date.now();
 
     console.log("");
+
     console.log(
       "===================================="
     );
@@ -1850,14 +1906,12 @@ app.post(
         Object.keys(req.body || {})
       );
 
-      // ------------------------------------------------------
-      // VALIDATION
-      // ------------------------------------------------------
-
       if (!bridge_key) {
 
         return res.status(401).json({
-          ok: false,
+
+          ok:
+            false,
 
           error:
             "bridge_key is required"
@@ -1867,7 +1921,9 @@ app.post(
       if (!BRIDGE_KEY) {
 
         return res.status(500).json({
-          ok: false,
+
+          ok:
+            false,
 
           error:
             "BRIDGE_KEY is not configured"
@@ -1877,7 +1933,9 @@ app.post(
       if (bridge_key !== BRIDGE_KEY) {
 
         return res.status(401).json({
-          ok: false,
+
+          ok:
+            false,
 
           error:
             "Invalid bridge_key"
@@ -1887,7 +1945,9 @@ app.post(
       if (!content_type) {
 
         return res.status(400).json({
-          ok: false,
+
+          ok:
+            false,
 
           error:
             "content_type is required"
@@ -1897,7 +1957,9 @@ app.post(
       if (!business_info) {
 
         return res.status(400).json({
-          ok: false,
+
+          ok:
+            false,
 
           error:
             "business_info is required"
@@ -1907,7 +1969,9 @@ app.post(
       if (!target_audience) {
 
         return res.status(400).json({
-          ok: false,
+
+          ok:
+            false,
 
           error:
             "target_audience is required"
@@ -1917,7 +1981,9 @@ app.post(
       if (!content_goal) {
 
         return res.status(400).json({
-          ok: false,
+
+          ok:
+            false,
 
           error:
             "content_goal is required"
@@ -1927,16 +1993,14 @@ app.post(
       if (!content_style) {
 
         return res.status(400).json({
-          ok: false,
+
+          ok:
+            false,
 
           error:
             "content_style is required"
         });
       }
-
-      // ------------------------------------------------------
-      // CONTENT PLAN PROTECTION
-      // ------------------------------------------------------
 
       if (
         isContentPlan(
@@ -1957,23 +2021,17 @@ app.post(
       if (!reels_topic) {
 
         return res.status(400).json({
-          ok: false,
+
+          ok:
+            false,
 
           error:
             "reels_topic is required"
         });
       }
 
-      // ------------------------------------------------------
-      // TOKEN
-      // ------------------------------------------------------
-
       const token =
         await getAccessToken();
-
-      // ------------------------------------------------------
-      // PROMPT
-      // ------------------------------------------------------
 
       const prompt =
         buildPrompt({
@@ -1997,10 +2055,6 @@ app.post(
             content_style
         });
 
-      // ------------------------------------------------------
-      // GENERATE
-      // ------------------------------------------------------
-
       const result =
         await generateWithGigaChat({
 
@@ -2017,10 +2071,6 @@ app.post(
           label:
             "NORMAL CONTENT"
         });
-
-      // ------------------------------------------------------
-      // RESPONSE
-      // ------------------------------------------------------
 
       return res.json({
 
