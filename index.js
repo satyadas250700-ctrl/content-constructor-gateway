@@ -7,10 +7,6 @@ const app = express();
 
 app.use(express.json({ limit: "1mb" }));
 
-// ============================================================
-// CONFIG
-// ============================================================
-
 const PORT = process.env.PORT || 10000;
 
 const GIGACHAT_KEY = process.env.GIGACHAT_KEY;
@@ -28,28 +24,22 @@ const OAUTH_URL =
 const CHAT_URL =
   "https://api.giga.chat/v1/chat/completions";
 
-// ============================================================
-// HTTPS AGENT
-// ============================================================
-
 const httpsAgent = new https.Agent({
   rejectUnauthorized: false
 });
-
-// ============================================================
-// TOKEN CACHE
-// ============================================================
 
 let accessToken = null;
 let tokenExpiresAt = 0;
 
 let generationInProgress = false;
 
-// ============================================================
-// GET GIGACHAT TOKEN
-// ============================================================
+
+/* =========================================================
+   AUTH
+========================================================= */
 
 async function getAccessToken() {
+
   if (
     accessToken &&
     Date.now() < tokenExpiresAt
@@ -63,26 +53,33 @@ async function getAccessToken() {
     );
   }
 
-  const response = await axios.post(
-    OAUTH_URL,
-    new URLSearchParams({
-      scope: GIGACHAT_SCOPE
-    }).toString(),
-    {
-      httpsAgent,
-      timeout: 8000,
-      headers: {
-        Authorization:
-          `Basic ${GIGACHAT_KEY}`,
+  const response =
+    await axios.post(
+      OAUTH_URL,
 
-        RqUID:
-          crypto.randomUUID(),
+      new URLSearchParams({
+        scope:
+          GIGACHAT_SCOPE
+      }).toString(),
 
-        "Content-Type":
-          "application/x-www-form-urlencoded"
+      {
+        httpsAgent,
+
+        timeout:
+          8000,
+
+        headers: {
+          Authorization:
+            `Basic ${GIGACHAT_KEY}`,
+
+          RqUID:
+            crypto.randomUUID(),
+
+          "Content-Type":
+            "application/x-www-form-urlencoded"
+        }
       }
-    }
-  );
+    );
 
   accessToken =
     response.data.access_token;
@@ -97,11 +94,13 @@ async function getAccessToken() {
   return accessToken;
 }
 
-// ============================================================
-// CONTENT TYPE HELPERS
-// ============================================================
+
+/* =========================================================
+   CONTENT TYPE
+========================================================= */
 
 function isContentPlan(contentType) {
+
   const type =
     String(contentType || "")
       .toLowerCase();
@@ -114,11 +113,13 @@ function isContentPlan(contentType) {
   );
 }
 
-// ============================================================
-// NORMAL CONTENT INSTRUCTIONS
-// ============================================================
+
+/* =========================================================
+   NORMAL CONTENT INSTRUCTIONS
+========================================================= */
 
 function getContentInstructions(contentType) {
+
   const type =
     String(contentType || "")
       .toLowerCase();
@@ -128,6 +129,7 @@ function getContentInstructions(contentType) {
     type.includes("тг") ||
     type.includes("телеграм")
   ) {
+
     return `
 СОЗДАЙ ГОТОВЫЙ ПОСТ ДЛЯ TELEGRAM.
 
@@ -152,6 +154,7 @@ function getContentInstructions(contentType) {
   }
 
   if (type.includes("reels")) {
+
     return `
 СОЗДАЙ ГОТОВЫЙ СЦЕНАРИЙ REELS.
 
@@ -182,6 +185,7 @@ CTA:
     !type.includes("telegram") &&
     !type.includes("телеграм")
   ) {
+
     return `
 СОЗДАЙ ГОТОВЫЙ ПОСТ ДЛЯ СОЦИАЛЬНЫХ СЕТЕЙ.
 
@@ -204,6 +208,7 @@ CTA:
     type.includes("карусель") ||
     type.includes("carousel")
   ) {
+
     return `
 СОЗДАЙ ГОТОВУЮ КАРУСЕЛЬ.
 
@@ -235,9 +240,10 @@ CTA:
 `;
 }
 
-// ============================================================
-// BUILD NORMAL PROMPT
-// ============================================================
+
+/* =========================================================
+   NORMAL CONTENT PROMPT
+========================================================= */
 
 function buildPrompt({
   contentType,
@@ -247,6 +253,7 @@ function buildPrompt({
   reelsTopic,
   contentStyle
 }) {
+
   return `
 Ты — профессиональный российский
 контент-маркетолог, контент-стратег и сценарист.
@@ -331,9 +338,10 @@ ${getContentInstructions(contentType)}
 `;
 }
 
-// ============================================================
-// BUILD STRICT PLAN CHUNK PROMPT
-// ============================================================
+
+/* =========================================================
+   PLAN PROMPT
+========================================================= */
 
 function buildPlanChunkPrompt({
   startDay,
@@ -344,8 +352,10 @@ function buildPlanChunkPrompt({
   contentStyle,
   previousPlan
 }) {
-  const contextBlock = previousPlan
-    ? `
+
+  const contextBlock =
+    previousPlan
+      ? `
 ПРЕДЫДУЩАЯ ЧАСТЬ ПЛАНА:
 
 ${previousPlan}
@@ -361,7 +371,7 @@ ${previousPlan}
 
 Продолжай общую логику контент-плана.
 `
-    : `
+      : `
 Это начало контент-плана.
 
 Построй первые дни так, чтобы человек
@@ -968,9 +978,682 @@ CTA:
 `;
 }
 
-// ============================================================
-// GIGACHAT REQUEST
-// ============================================================
+
+/* =========================================================
+   POST-FILTER
+   ========================================================= */
+
+/*
+   ВАЖНО:
+
+   Фильтр не заменяет промпт.
+
+   Он работает ПОСЛЕ генерации.
+
+   Его задача:
+   1. найти типичные выдуманные детали;
+   2. проверить, подтверждены ли они входными данными;
+   3. при подозрении отправить результат на ремонт.
+
+   Мы намеренно НЕ удаляем слова автоматически.
+   Это защищает нормальный контент от разрушения.
+*/
+
+
+const POST_FILTER_RULES = [
+
+  {
+    name:
+      "people",
+
+    patterns: [
+      /\bчеловек\b/iu,
+      /\bчеловека\b/iu,
+      /\bлюдей\b/iu,
+      /\bбариста\b/iu,
+      /\bпосетитель\b/iu,
+      /\bпосетителя\b/iu,
+      /\bклиент сидит\b/iu,
+      /\bдевушка\b/iu,
+      /\bпарень\b/iu,
+      /\bмужчина\b/iu,
+      /\bженщина\b/iu
+    ]
+  },
+
+  {
+    name:
+      "furniture",
+
+    patterns: [
+      /\bстолик\b/iu,
+      /\bстола\b/iu,
+      /\bстол\b/iu,
+      /\bстул\b/iu,
+      /\bдиван\b/iu,
+      /\bкресло\b/iu,
+      /\bстойка\b/iu
+    ]
+  },
+
+  {
+    name:
+      "interior",
+
+    patterns: [
+      /\bинтерьер\b/iu,
+      /\bокно\b/iu,
+      /\bдверь\b/iu,
+      /\bстена\b/iu,
+      /\bзал\b/iu,
+      /\bпомещение\b/iu,
+      /\bвитрина\b/iu,
+      /\bполка\b/iu
+    ]
+  },
+
+  {
+    name:
+      "equipment",
+
+    patterns: [
+      /\bкофемашин/iu,
+      /\bэспрессо-машин/iu,
+      /\bоборудовани/iu,
+      /\bгриль\b/iu,
+      /\bпечь\b/iu,
+      /\bдуховк/iu,
+      /\bблендер/iu
+    ]
+  },
+
+  {
+    name:
+      "dishes",
+
+    patterns: [
+      /\bчашк/iu,
+      /\bбокал/iu,
+      /\bтарелк/iu,
+      /\bложк/iu,
+      /\bвилк/iu,
+      /\bстакан/iu
+    ]
+  },
+
+  {
+    name:
+      "street_transport",
+
+    patterns: [
+      /\bулиц/iu,
+      /\bмашин/iu,
+      /\bавтомобил/iu,
+      /\bдорог/iu,
+      /\bтротуар/iu,
+      /\bздан/iu,
+      /\bтранспорт/iu
+    ]
+  },
+
+  {
+    name:
+      "packaging",
+
+    patterns: [
+      /\bупаковк/iu,
+      /\bкоробк/iu,
+      /\bпакет/iu,
+      /\bконтейнер/iu
+    ]
+  },
+
+  {
+    name:
+      "product_properties",
+
+    patterns: [
+      /\bгоряч/iu,
+      /\bхолод/iu,
+      /\bсвеж/iu,
+      /\bароматн/iu,
+      /\bдымящ/iu,
+      /\bхрустящ/iu,
+      /\bсливочн/iu,
+      /\bвоздушн/iu,
+      /\bглянцев/iu,
+      /\bтягуч/iu,
+      /\bтающ/iu,
+      /\bсвежеобжаренн/iu
+    ]
+  },
+
+  {
+    name:
+      "specific_products",
+
+    patterns: [
+      /\bэспрессо\b/iu,
+      /\bлатте\b/iu,
+      /\bкапучино\b/iu,
+      /\bамерикано\b/iu,
+      /\bкруассан/iu,
+      /\bфондан/iu,
+      /\bчизкейк/iu,
+      /\bмаффин/iu,
+      /\bторт\b/iu
+    ]
+  },
+
+  {
+    name:
+      "time",
+
+    patterns: [
+      /\bутром\b/iu,
+      /\bвечером\b/iu,
+      /\bночью\b/iu,
+      /\bпосле\s+\d{1,2}\b/iu,
+      /\bдо\s+\d{1,2}\b/iu,
+      /\bв\s+\d{1,2}[:.]\d{2}\b/iu
+    ]
+  },
+
+  {
+    name:
+      "financial_claims",
+
+    patterns: [
+      /\bскидк/iu,
+      /\bакци/iu,
+      /\bбесплатн/iu,
+      /\bвыгод/iu,
+      /\bсредний чек\b/iu,
+      /\bувеличить чек\b/iu
+    ]
+  }
+];
+
+
+/*
+   Приводим текст к удобному виду для проверки.
+*/
+
+function normalizeForFilter(text) {
+
+  return String(text || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
+/*
+   Проверяем, присутствует ли термин
+   уже во входных данных клиента.
+
+   Если клиент действительно написал:
+   "Продаём кофе в чашках"
+
+   то "чашк" не считается подозрительным.
+*/
+
+function isConfirmedInSource(term, sourceText) {
+
+  const source =
+    normalizeForFilter(sourceText);
+
+  const normalizedTerm =
+    normalizeForFilter(term);
+
+  if (!normalizedTerm) {
+    return false;
+  }
+
+  return source.includes(
+    normalizedTerm
+  );
+}
+
+
+/*
+   Получаем объединённый контекст клиента.
+*/
+
+function buildFilterSource({
+  businessInfo,
+  targetAudience,
+  contentGoal,
+  reelsTopic,
+  contentStyle
+}) {
+
+  return [
+    businessInfo,
+    targetAudience,
+    contentGoal,
+    reelsTopic,
+    contentStyle
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+
+/*
+   Основная проверка.
+
+   Здесь мы НЕ переписываем текст.
+
+   Только определяем подозрительные категории.
+*/
+
+function auditGeneratedContent({
+  generatedText,
+  sourceText
+}) {
+
+  const text =
+    normalizeForFilter(generatedText);
+
+  const violations = [];
+
+  for (
+    const rule of POST_FILTER_RULES
+  ) {
+
+    const matchedPatterns = [];
+
+    for (
+      const pattern of rule.patterns
+    ) {
+
+      const match =
+        text.match(pattern);
+
+      if (!match) {
+        continue;
+      }
+
+      const matchedText =
+        match[0];
+
+      /*
+         Если конкретный термин
+         явно есть во входных данных,
+         не считаем его нарушением.
+
+         Например:
+         вход: "продаём латте"
+         ответ: "крупный план латте"
+         → разрешено.
+      */
+
+      if (
+        isConfirmedInSource(
+          matchedText,
+          sourceText
+        )
+      ) {
+        continue;
+      }
+
+      matchedPatterns.push(
+        matchedText
+      );
+    }
+
+    if (
+      matchedPatterns.length > 0
+    ) {
+
+      violations.push({
+
+        category:
+          rule.name,
+
+        examples:
+          [
+            ...new Set(
+              matchedPatterns
+            )
+          ].slice(0, 5)
+      });
+    }
+  }
+
+  return {
+    passed:
+      violations.length === 0,
+
+    violations
+  };
+}
+
+
+/*
+   Формируем компактное описание
+   проблем для ремонтного прохода.
+*/
+
+function buildRepairIssues(violations) {
+
+  return violations
+    .map(
+      item =>
+        `Категория: ${item.category}. Подозрительные фрагменты: ${item.examples.join(", ")}`
+    )
+    .join("\n");
+}
+
+
+/*
+   Ремонт результата.
+
+   ВАЖНО:
+   Мы не создаём новый контент с нуля.
+   Мы просим GigaChat сохранить идею,
+   но убрать неподтверждённые детали.
+*/
+
+async function repairGeneratedContent({
+  token,
+  generatedText,
+  sourceText,
+  violations,
+  label
+}) {
+
+  const issues =
+    buildRepairIssues(
+      violations
+    );
+
+  const repairPrompt = `
+Тебе необходимо отредактировать уже готовый контент.
+
+ИСХОДНЫЕ ДАННЫЕ КЛИЕНТА:
+
+${sourceText}
+
+ГОТОВЫЙ КОНТЕНТ:
+
+${generatedText}
+
+АВТОМАТИЧЕСКИЙ ПОСТ-ФИЛЬТР ОБНАРУЖИЛ
+ПОДОЗРИТЕЛЬНЫЕ ДЕТАЛИ:
+
+${issues}
+
+ТВОЯ ЗАДАЧА:
+
+Сохрани:
+- основную тему;
+- смысл;
+- креативную идею;
+- метафоры;
+- юмор;
+- структуру;
+- CTA;
+- формат контента.
+
+Но полностью убери или обобщи
+неподтверждённые конкретные детали.
+
+КРИТИЧЕСКОЕ ПРАВИЛО:
+
+Фактом можно считать ТОЛЬКО то,
+что прямо присутствует в исходных данных клиента.
+
+Если конкретный объект, человек,
+предмет, место, оборудование,
+посуда, интерьер, действие,
+свойство продукта, время,
+событие, товар или услуга
+не указаны в исходных данных,
+НЕ ИСПОЛЬЗУЙ их как конкретную деталь.
+
+Не заменяй одну выдуманную деталь
+на другую выдуманную деталь.
+
+Если конкретизация невозможна,
+используй более универсальную формулировку.
+
+Например:
+
+"кофейная пенка"
+→ "визуал кофе"
+
+"чашка кофе"
+→ "визуал кофе"
+
+"человек за столиком"
+→ "можно построить сцену вокруг идеи паузы"
+
+"быстрые кадры улиц и машин"
+→ "динамичный монтаж"
+
+"бариста за кофемашиной"
+→ "динамичная подача продукта"
+
+"латте"
+→ "кофе"
+
+если латте не указано клиентом.
+
+НЕ ПИШИ ОБЪЯСНЕНИЯ.
+
+ВЕРНИ ТОЛЬКО ИСПРАВЛЕННЫЙ КОНТЕНТ.
+`;
+
+  return generateWithGigaChat({
+
+    token,
+
+    prompt:
+      repairPrompt,
+
+    temperature:
+      0.2,
+
+    maxTokens:
+      1800,
+
+    label:
+      label
+        ? `${label} REPAIR`
+        : "POST-FILTER REPAIR"
+  });
+}
+
+
+/*
+   Главная функция пост-фильтра.
+
+   Первый проход:
+   GigaChat → audit
+
+   Если всё хорошо:
+   → результат сразу.
+
+   Если обнаружены подозрения:
+   → один repair pass.
+
+   После ремонта:
+   → повторный audit.
+
+   Если второй audit всё ещё что-то находит,
+   мы НЕ запускаем бесконечный цикл.
+*/
+
+async function postFilterGeneratedContent({
+  token,
+  generatedText,
+  businessInfo,
+  targetAudience,
+  contentGoal,
+  reelsTopic,
+  contentStyle,
+  label
+}) {
+
+  const sourceText =
+    buildFilterSource({
+
+      businessInfo,
+
+      targetAudience,
+
+      contentGoal,
+
+      reelsTopic,
+
+      contentStyle
+    });
+
+  console.log(
+    `[POST-FILTER] Starting audit: ${label}`
+  );
+
+  const firstAudit =
+    auditGeneratedContent({
+
+      generatedText,
+
+      sourceText
+    });
+
+  if (
+    firstAudit.passed
+  ) {
+
+    console.log(
+      `[POST-FILTER] PASSED: ${label}`
+    );
+
+    return {
+      result:
+        generatedText,
+
+      filtered:
+        false,
+
+      repaired:
+        false,
+
+      violations:
+        []
+    };
+  }
+
+  console.log(
+    `[POST-FILTER] VIOLATIONS FOUND: ${label}`
+  );
+
+  console.log(
+    `[POST-FILTER] Issues:`,
+    JSON.stringify(
+      firstAudit.violations
+    )
+  );
+
+  /*
+     Один ремонтный проход.
+  */
+
+  const repaired =
+    await repairGeneratedContent({
+
+      token,
+
+      generatedText,
+
+      sourceText,
+
+      violations:
+        firstAudit.violations,
+
+      label
+    });
+
+  /*
+     Проверяем уже исправленный результат.
+  */
+
+  const secondAudit =
+    auditGeneratedContent({
+
+      generatedText:
+        repaired.result,
+
+      sourceText
+    });
+
+  if (
+    secondAudit.passed
+  ) {
+
+    console.log(
+      `[POST-FILTER] REPAIR PASSED: ${label}`
+    );
+
+    return {
+
+      result:
+        repaired.result,
+
+      filtered:
+        true,
+
+      repaired:
+        true,
+
+      violations:
+        firstAudit.violations
+    };
+  }
+
+  /*
+     Если после ремонта остались
+     подозрительные детали,
+     НЕ делаем бесконечные запросы.
+
+     Возвращаем исправленный результат,
+     потому что второй проход уже
+     должен был убрать большую часть проблем.
+  */
+
+  console.log(
+    `[POST-FILTER] REPAIR STILL HAS WARNINGS: ${label}`
+  );
+
+  console.log(
+    `[POST-FILTER] Remaining issues:`,
+    JSON.stringify(
+      secondAudit.violations
+    )
+  );
+
+  return {
+
+    result:
+      repaired.result,
+
+    filtered:
+      true,
+
+    repaired:
+      true,
+
+    violations:
+      secondAudit.violations
+  };
+}
+
+
+/* =========================================================
+   GIGACHAT GENERATION
+========================================================= */
 
 async function generateWithGigaChat({
   token,
@@ -979,6 +1662,7 @@ async function generateWithGigaChat({
   maxTokens,
   label
 }) {
+
   const startedAt =
     Date.now();
 
@@ -990,6 +1674,7 @@ async function generateWithGigaChat({
 
     const response =
       await axios.post(
+
         CHAT_URL,
 
         {
@@ -997,6 +1682,7 @@ async function generateWithGigaChat({
             GIGACHAT_MODEL,
 
           messages: [
+
             {
               role:
                 "system",
@@ -1068,16 +1754,11 @@ async function generateWithGigaChat({
         {
           httpsAgent,
 
-          // ВАЖНО:
-          // Было 9000 мс.
-          // Увеличиваем до 20000 мс,
-          // потому что контент-план реально
-          // может генерироваться дольше 9 секунд.
-
           timeout:
             20000,
 
           headers: {
+
             Authorization:
               `Bearer ${token}`,
 
@@ -1107,14 +1788,18 @@ async function generateWithGigaChat({
     );
 
     if (!result) {
+
       throw new Error(
         `${label}: GigaChat returned empty result`
       );
     }
 
     return {
+
       result,
+
       elapsed,
+
       status:
         response.status
     };
@@ -1153,9 +1838,10 @@ async function generateWithGigaChat({
   }
 }
 
-// ============================================================
-// PLAN VALIDATION
-// ============================================================
+
+/* =========================================================
+   PLAN VALIDATION
+========================================================= */
 
 function validatePlanData({
   bridge_key,
@@ -1196,9 +1882,10 @@ function validatePlanData({
   return null;
 }
 
-// ============================================================
-// GENERATE PLAN CHUNK
-// ============================================================
+
+/* =========================================================
+   PLAN GENERATION
+========================================================= */
 
 async function generatePlanChunk({
   startDay,
@@ -1232,25 +1919,74 @@ async function generatePlanChunk({
       previousPlan
     });
 
-  return generateWithGigaChat({
+  const result =
+    await generateWithGigaChat({
 
-    token,
+      token,
 
-    prompt,
+      prompt,
 
-    temperature:
-      0.35,
+      temperature:
+        0.35,
 
-    maxTokens:
-      1100,
+      maxTokens:
+        1100,
 
-    label
-  });
+      label
+    });
+
+  /*
+     Пост-фильтр для контент-плана.
+  */
+
+  const filtered =
+    await postFilterGeneratedContent({
+
+      token,
+
+      generatedText:
+        result.result,
+
+      businessInfo,
+
+      targetAudience,
+
+      contentGoal,
+
+      reelsTopic:
+        "",
+
+      contentStyle,
+
+      label
+    });
+
+  return {
+
+    result:
+      filtered.result,
+
+    elapsed:
+      result.elapsed,
+
+    status:
+      result.status,
+
+    filtered:
+      filtered.filtered,
+
+    repaired:
+      filtered.repaired,
+
+    violations:
+      filtered.violations
+  };
 }
 
-// ============================================================
-// HANDLE PLAN CHUNK
-// ============================================================
+
+/* =========================================================
+   PLAN HANDLER
+========================================================= */
 
 async function handlePlanChunk(
   req,
@@ -1387,6 +2123,18 @@ async function handlePlanChunk(
       result_length:
         result.result.length,
 
+      post_filter:
+        {
+          triggered:
+            result.filtered,
+
+          repaired:
+            result.repaired,
+
+          warnings:
+            result.violations.length
+        },
+
       reels_result:
         result.result
     });
@@ -1424,9 +2172,10 @@ async function handlePlanChunk(
   }
 }
 
-// ============================================================
-// HEALTH
-// ============================================================
+
+/* =========================================================
+   HEALTH
+========================================================= */
 
 app.get(
   "/health",
@@ -1455,9 +2204,10 @@ app.get(
   }
 );
 
-// ============================================================
-// ROOT
-// ============================================================
+
+/* =========================================================
+   ROOT
+========================================================= */
 
 app.get(
   "/",
@@ -1513,9 +2263,10 @@ app.get(
   }
 );
 
-// ============================================================
-// TEST AUTH
-// ============================================================
+
+/* =========================================================
+   TEST AUTH
+========================================================= */
 
 app.get(
   "/test-auth",
@@ -1560,9 +2311,10 @@ app.get(
   }
 );
 
-// ============================================================
-// TEST BASIC GENERATION
-// ============================================================
+
+/* =========================================================
+   TEST GENERATE
+========================================================= */
 
 app.get(
   "/test-generate",
@@ -1586,6 +2338,7 @@ app.get(
               GIGACHAT_MODEL,
 
             messages: [
+
               {
                 role:
                   "user",
@@ -1603,6 +2356,7 @@ app.get(
           },
 
           {
+
             httpsAgent,
 
             timeout:
@@ -1675,9 +2429,10 @@ app.get(
   }
 );
 
-// ============================================================
-// TEST PLAN 1-5
-// ============================================================
+
+/* =========================================================
+   TEST PLAN 1-5
+========================================================= */
 
 app.get(
   "/test-plan-1-5",
@@ -1754,6 +2509,18 @@ app.get(
         model:
           GIGACHAT_MODEL,
 
+        post_filter:
+          {
+            triggered:
+              result.filtered,
+
+            repaired:
+              result.repaired,
+
+            warnings:
+              result.violations.length
+          },
+
         reels_result:
           result.result
       });
@@ -1789,9 +2556,10 @@ app.get(
   }
 );
 
-// ============================================================
-// PLAN ENDPOINTS
-// ============================================================
+
+/* =========================================================
+   PLAN ENDPOINTS
+========================================================= */
 
 app.post(
   "/generate-plan-1-5",
@@ -1859,9 +2627,10 @@ app.post(
     )
 );
 
-// ============================================================
-// NORMAL GENERATE
-// ============================================================
+
+/* =========================================================
+   NORMAL GENERATE
+========================================================= */
 
 app.post(
   "/generate",
@@ -1903,7 +2672,9 @@ app.post(
 
       console.log(
         "Body keys:",
-        Object.keys(req.body || {})
+        Object.keys(
+          req.body || {}
+        )
       );
 
       if (!bridge_key) {
@@ -2055,6 +2826,10 @@ app.post(
             content_style
         });
 
+      /*
+         Первый запрос GigaChat.
+      */
+
       const result =
         await generateWithGigaChat({
 
@@ -2067,6 +2842,37 @@ app.post(
 
           maxTokens:
             1800,
+
+          label:
+            "NORMAL CONTENT"
+        });
+
+      /*
+         Пост-фильтр обычного контента.
+      */
+
+      const filtered =
+        await postFilterGeneratedContent({
+
+          token,
+
+          generatedText:
+            result.result,
+
+          businessInfo:
+            business_info,
+
+          targetAudience:
+            target_audience,
+
+          contentGoal:
+            content_goal,
+
+          reelsTopic:
+            reels_topic,
+
+          contentStyle:
+            content_style,
 
           label:
             "NORMAL CONTENT"
@@ -2087,10 +2893,22 @@ app.post(
           Date.now() - startedAt,
 
         result_length:
-          result.result.length,
+          filtered.result.length,
+
+        post_filter:
+          {
+            triggered:
+              filtered.filtered,
+
+            repaired:
+              filtered.repaired,
+
+            warnings:
+              filtered.violations.length
+          },
 
         reels_result:
-          result.result
+          filtered.result
       });
 
     } catch (error) {
@@ -2135,9 +2953,10 @@ app.post(
   }
 );
 
-// ============================================================
-// 404
-// ============================================================
+
+/* =========================================================
+   404
+========================================================= */
 
 app.use(
   (req, res) => {
@@ -2159,9 +2978,10 @@ app.use(
   }
 );
 
-// ============================================================
-// GLOBAL ERROR
-// ============================================================
+
+/* =========================================================
+   GLOBAL ERROR
+========================================================= */
 
 app.use(
   (
@@ -2188,9 +3008,10 @@ app.use(
   }
 );
 
-// ============================================================
-// SERVER START
-// ============================================================
+
+/* =========================================================
+   START
+========================================================= */
 
 app.listen(
   PORT,
@@ -2236,6 +3057,11 @@ app.listen(
       BRIDGE_KEY
         ? "configured"
         : "MISSING"
+    );
+
+    console.log(
+      "POST-FILTER:",
+      "enabled"
     );
 
     console.log(
