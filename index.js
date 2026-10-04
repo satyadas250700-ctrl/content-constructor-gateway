@@ -9,11 +9,16 @@ app.use(express.json({ limit: "1mb" }));
 const PORT = process.env.PORT || 10000;
 const GIGACHAT_KEY = process.env.GIGACHAT_KEY;
 const BRIDGE_KEY = process.env.BRIDGE_KEY;
-const GIGACHAT_SCOPE = process.env.GIGACHAT_SCOPE || "GIGACHAT_API_PERS";
-const GIGACHAT_MODEL = process.env.GIGACHAT_MODEL || "GigaChat-3-Ultra";
+const GIGACHAT_SCOPE =
+  process.env.GIGACHAT_SCOPE || "GIGACHAT_API_PERS";
+const GIGACHAT_MODEL =
+  process.env.GIGACHAT_MODEL || "GigaChat-3-Ultra";
 
-const OAUTH_URL = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth";
-const CHAT_URL = "https://api.giga.chat/v1/chat/completions";
+const OAUTH_URL =
+  "https://ngw.devices.sberbank.ru:9443/api/v2/oauth";
+
+const CHAT_URL =
+  "https://api.giga.chat/v1/chat/completions";
 
 const httpsAgent = new https.Agent({
   rejectUnauthorized: false
@@ -21,20 +26,24 @@ const httpsAgent = new https.Agent({
 
 let accessToken = null;
 let tokenExpiresAt = 0;
+
 let generationInProgress = false;
+let generationStartedAt = 0;
 
-
-// ============================================================
-// GIGACHAT AUTH
-// ============================================================
+const GENERATION_LOCK_TIMEOUT = 120000;
 
 async function getAccessToken() {
-  if (accessToken && Date.now() < tokenExpiresAt) {
+  if (
+    accessToken &&
+    Date.now() < tokenExpiresAt
+  ) {
     return accessToken;
   }
 
   if (!GIGACHAT_KEY) {
-    throw new Error("GIGACHAT_KEY is not configured");
+    throw new Error(
+      "GIGACHAT_KEY is not configured"
+    );
   }
 
   const response = await axios.post(
@@ -46,29 +55,51 @@ async function getAccessToken() {
       httpsAgent,
       timeout: 8000,
       headers: {
-        Authorization: `Basic ${GIGACHAT_KEY}`,
+        Authorization:
+          `Basic ${GIGACHAT_KEY}`,
         RqUID: crypto.randomUUID(),
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Content-Type":
+          "application/x-www-form-urlencoded"
       }
     }
   );
 
-  accessToken = response.data.access_token;
+  accessToken =
+    response.data.access_token;
 
-  const expiresIn = Number(response.data.expires_in) || 1800;
+  const expiresIn =
+    Number(response.data.expires_in) || 1800;
 
-  tokenExpiresAt = Date.now() + (expiresIn - 60) * 1000;
+  tokenExpiresAt =
+    Date.now() +
+    (expiresIn - 60) * 1000;
 
   return accessToken;
 }
 
+function acquireGenerationLock() {
+  if (
+    generationInProgress &&
+    Date.now() - generationStartedAt <
+      GENERATION_LOCK_TIMEOUT
+  ) {
+    return false;
+  }
 
-// ============================================================
-// HELPERS
-// ============================================================
+  generationInProgress = true;
+  generationStartedAt = Date.now();
+
+  return true;
+}
+
+function releaseGenerationLock() {
+  generationInProgress = false;
+  generationStartedAt = 0;
+}
 
 function isContentPlan(contentType) {
-  const type = String(contentType || "").toLowerCase();
+  const type =
+    String(contentType || "").toLowerCase();
 
   return (
     type.includes("контент-план") ||
@@ -78,9 +109,9 @@ function isContentPlan(contentType) {
   );
 }
 
-
 function getContentInstructions(contentType) {
-  const type = String(contentType || "").toLowerCase();
+  const type =
+    String(contentType || "").toLowerCase();
 
   if (
     type.includes("telegram") ||
@@ -114,10 +145,18 @@ function getContentInstructions(contentType) {
 СОЗДАЙ ГОТОВЫЙ СЦЕНАРИЙ REELS.
 
 Структура:
-ХУК: первая цепляющая фраза.
-СЦЕНАРИЙ: короткий динамичный текст.
-ФИНАЛ: сильное завершение.
-CTA: призыв к действию.
+
+ХУК:
+первая цепляющая фраза.
+
+СЦЕНАРИЙ:
+короткий динамичный текст.
+
+ФИНАЛ:
+сильное завершение.
+
+CTA:
+призыв к действию.
 
 Текст должен быть естественным, интересным и соответствовать бизнесу, аудитории, цели и стилю.
 
@@ -181,11 +220,6 @@ CTA: призыв к действию.
 `;
 }
 
-
-// ============================================================
-// NORMAL CONTENT PROMPT
-// ============================================================
-
 function buildPrompt({
   contentType,
   businessInfo,
@@ -203,12 +237,23 @@ function buildPrompt({
 ДАННЫЕ КЛИЕНТА
 ====================
 
-Формат: ${contentType}
-Бизнес: ${businessInfo}
-Целевая аудитория: ${targetAudience}
-Цель контента: ${contentGoal}
-Тема: ${reelsTopic || "Определи подходящую тему самостоятельно."}
-Стиль: ${contentStyle}
+Формат:
+${contentType}
+
+Бизнес:
+${businessInfo}
+
+Целевая аудитория:
+${targetAudience}
+
+Цель контента:
+${contentGoal}
+
+Тема:
+${reelsTopic || "Определи подходящую тему самостоятельно."}
+
+Стиль:
+${contentStyle}
 
 ====================
 ИНСТРУКЦИЯ
@@ -228,19 +273,53 @@ ${getContentInstructions(contentType)}
 - Не объясняй процесс создания.
 - Учитывай бизнес, аудиторию, цель и стиль.
 - Контент должен быть практически применим.
-- Не выдумывай реальные факты о бизнесе.
-- Не придумывай истории, кейсы, отзывы, цены, скидки, результаты или процессы работы.
-- Если конкретной информации нет, используй содержательную абстракцию или условный сценарий.
-- Метафоры, юмор, сравнения и гиперболы разрешены, если они не выдаются за реальные факты.
+
+КРИТИЧЕСКИ ВАЖНО:
+
+Не выдумывай реальные факты о бизнесе.
+
+Не придумывай:
+- истории;
+- кейсы;
+- отзывы;
+- клиентов;
+- результаты;
+- цены;
+- скидки;
+- цифры;
+- даты;
+- сроки;
+- оборудование;
+- помещения;
+- сотрудников;
+- технологии;
+- процессы;
+- свойства продукта;
+- гарантии;
+- достижения.
+
+Если конкретной информации нет, используй:
+- вопрос;
+- условную рекомендацию;
+- маркетинговый ракурс;
+- метафору;
+- сравнение;
+- гиперболу;
+- универсальный съёмочный или монтажный приём;
+- содержательную абстракцию.
+
+Метафоры, юмор, сравнения и гиперболы разрешены, если очевидно, что это образная формулировка, а не реальный факт.
+
+Не используй незаполненные шаблоны вроде:
+[сфера/продукт]
+[результат]
+[цена]
+[адрес]
+[название]
 
 Выдай только готовый контент.
 `;
 }
-
-
-// ============================================================
-// CONTENT PLAN PROMPT
-// ============================================================
 
 function buildPlanChunkPrompt({
   startDay,
@@ -325,11 +404,81 @@ ${contextBlock}
 10. Не объясняй свои решения.
 11. Не добавляй вступление или заключение.
 12. Ответ только на русском языке.
-13. Не выдумывай реальные факты о бизнесе.
-14. Не придумывай цены, скидки, цифры, кейсы, отзывы, истории, клиентов, результаты, оборудование, помещения, технологии или процессы работы.
-15. Если конкретная деталь неизвестна, используй условную формулировку или более высокий уровень абстракции.
-16. Метафоры, юмор, сравнения и эмоциональные образы разрешены.
-17. Не превращай каждый день в одинаковую конструкцию.
+
+====================
+ФАКТОЛОГИЯ
+====================
+
+Не выдумывай реальные факты о бизнесе.
+
+Не придумывай:
+- цены;
+- скидки;
+- цифры;
+- даты;
+- сроки;
+- клиентов;
+- кейсы;
+- отзывы;
+- результаты;
+- гарантии;
+- историю бизнеса;
+- личный опыт;
+- оборудование;
+- помещения;
+- интерьер;
+- сотрудников;
+- локации;
+- технологии;
+- материалы;
+- ингредиенты;
+- упаковку;
+- конкретные процессы;
+- конкретные этапы работы.
+
+Если конкретная деталь неизвестна, НЕ ЗАМЕНЯЙ ЕЁ ДРУГОЙ ВЫДУМАННОЙ ДЕТАЛЬЮ.
+
+Вместо этого:
+- сформулируй вопрос;
+- предложи условный сценарий;
+- используй маркетинговый ракурс;
+- используй подтверждённые данные;
+- подними уровень абстракции.
+
+Метафоры, юмор, сравнения и эмоциональные образы разрешены.
+
+Не оставляй плейсхолдеры:
+[сфера/продукт]
+[результат]
+[цена]
+[адрес]
+[название]
+
+====================
+CTA
+====================
+
+Разрешены обычные CTA:
+
+- написать комментарий;
+- сохранить;
+- поделиться;
+- поставить реакцию;
+- ответить на вопрос;
+- выбрать вариант;
+- рассказать о своём опыте.
+
+Не обещай:
+- чек-лист;
+- гайд;
+- консультацию;
+- подарок;
+- расчёт;
+- кейс;
+- скидку;
+- личный разбор,
+
+если наличие такого ресурса не указано во входных данных.
 
 ====================
 ФОРМАТ
@@ -349,16 +498,9 @@ CTA: конкретный призыв к действию
 
 CTA не должны быть одинаковыми каждый день.
 
-Не обещай аудитории материал, чек-лист, консультацию, подарок, расчёт или другой ресурс, если его наличие не указано во входных данных.
-
 ВЕРНИ ТОЛЬКО КОНТЕНТ-ПЛАН.
 `;
 }
-
-
-// ============================================================
-// GIGACHAT GENERATION
-// ============================================================
 
 async function generateWithGigaChat({
   token,
@@ -369,7 +511,9 @@ async function generateWithGigaChat({
 }) {
   const startedAt = Date.now();
 
-  console.log(`[${label}] Sending request to GigaChat...`);
+  console.log(
+    `[${label}] Sending request to GigaChat...`
+  );
 
   try {
     const response = await axios.post(
@@ -394,20 +538,32 @@ async function generateWithGigaChat({
         httpsAgent,
         timeout: 9000,
         headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
+          Authorization:
+            `Bearer ${token}`,
+          "Content-Type":
+            "application/json"
         }
       }
     );
 
     const result =
-      response.data?.choices?.[0]?.message?.content || "";
+      response.data?.choices?.[0]?.message?.content ||
+      "";
 
-    const elapsed = Date.now() - startedAt;
+    const elapsed =
+      Date.now() - startedAt;
 
-    console.log(`[${label}] HTTP status: ${response.status}`);
-    console.log(`[${label}] Result length: ${result.length}`);
-    console.log(`[${label}] Time: ${elapsed} ms`);
+    console.log(
+      `[${label}] HTTP status: ${response.status}`
+    );
+
+    console.log(
+      `[${label}] Result length: ${result.length}`
+    );
+
+    console.log(
+      `[${label}] Time: ${elapsed} ms`
+    );
 
     if (!result) {
       throw new Error(
@@ -421,58 +577,82 @@ async function generateWithGigaChat({
       status: response.status
     };
   } catch (error) {
-    const elapsed = Date.now() - startedAt;
+    const elapsed =
+      Date.now() - startedAt;
 
-    console.error(`[${label}] ERROR`);
-    console.error(`[${label}] Message:`, error.message);
+    console.error(
+      `[${label}] ERROR`
+    );
+
+    console.error(
+      `[${label}] Message:`,
+      error.message
+    );
+
     console.error(
       `[${label}] Status:`,
       error.response?.status
     );
+
     console.error(
       `[${label}] Response:`,
       error.response?.data
     );
-    console.error(`[${label}] Time:`, elapsed, "ms");
+
+    console.error(
+      `[${label}] Time:`,
+      elapsed,
+      "ms"
+    );
 
     throw error;
   }
 }
 
-
-// ============================================================
-// AI CONTENT FACT AUDITOR V3
-// ============================================================
-
 function cleanJsonText(text) {
-  let value = String(text || "").trim();
+  let value =
+    String(text || "").trim();
 
   value = value
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```$/i, "")
+    .replace(
+      /^```json\s*/i,
+      ""
+    )
+    .replace(
+      /^```\s*/i,
+      ""
+    )
+    .replace(
+      /\s*```$/i,
+      ""
+    )
     .trim();
 
-  const firstBrace = value.indexOf("{");
-  const lastBrace = value.lastIndexOf("}");
+  const firstBrace =
+    value.indexOf("{");
+
+  const lastBrace =
+    value.lastIndexOf("}");
 
   if (
     firstBrace !== -1 &&
     lastBrace > firstBrace
   ) {
-    value = value.slice(
-      firstBrace,
-      lastBrace + 1
-    );
+    value =
+      value.slice(
+        firstBrace,
+        lastBrace + 1
+      );
   }
 
   return value;
 }
 
-
 function parseAuditorJson(text) {
   try {
-    return JSON.parse(cleanJsonText(text));
+    return JSON.parse(
+      cleanJsonText(text)
+    );
   } catch (error) {
     console.error(
       "[AI AUDITOR] JSON parse error:",
@@ -483,10 +663,411 @@ function parseAuditorJson(text) {
   }
 }
 
+/*
+========================================
+V4 DETERMINISTIC CONTENT CHECKER
+========================================
+*/
 
-// ============================================================
-// V3 AUDITOR PROMPT
-// ============================================================
+function normalizeForCheck(text) {
+  return String(text || "")
+    .replace(/\u00A0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getDeterministicViolations({
+  generatedContent,
+  businessInfo,
+  targetAudience,
+  contentGoal,
+  contentStyle,
+  contentType
+}) {
+  const content =
+    String(generatedContent || "");
+
+  const normalized =
+    normalizeForCheck(content);
+
+  const violations = [];
+
+  function addViolation(
+    text,
+    reason,
+    support,
+    repairType
+  ) {
+    if (!text) {
+      return;
+    }
+
+    const exists =
+      violations.some(
+        item =>
+          item.text === text
+      );
+
+    if (exists) {
+      return;
+    }
+
+    violations.push({
+      text,
+      reason,
+      support,
+      repair_type:
+        repairType || "abstract",
+      source:
+        "deterministic"
+    });
+  }
+
+  /*
+  ----------------------------------------
+  1. PLACEHOLDERS
+  ----------------------------------------
+  */
+
+  const placeholderRegex =
+    /\[[^\]]+\]/g;
+
+  const placeholders =
+    content.match(
+      placeholderRegex
+    ) || [];
+
+  placeholders.forEach(
+    placeholder => {
+      addViolation(
+        placeholder,
+        "Незаполненный плейсхолдер.",
+        "Плейсхолдер не подтверждён входными данными.",
+        "delete"
+      );
+    }
+  );
+
+  /*
+  ----------------------------------------
+  2. OBVIOUS NUMERIC FACTS
+  ----------------------------------------
+  */
+
+  const numericRegex =
+    /(?:\b\d+(?:[.,]\d+)?\s*(?:%|процент(?:а|ов)?|руб(?:\.|лей)?|₽|секунд(?:а|ы)?|минут(?:а|ы)?|час(?:а|ов)?|дн(?:я|ей)?|лет|года|год(?:а|ов)?|клиент(?:а|ов)?|продаж(?:а|и)?|раз(?:а|ов)?)\b?)/gi;
+
+  const numericMatches =
+    normalized.match(
+      numericRegex
+    ) || [];
+
+  numericMatches.forEach(
+    match => {
+      const trimmed =
+        match.trim();
+
+      /*
+      День 1 / Слайд 1 и подобные
+      технические номера не считаем.
+      */
+      const contextIndex =
+        normalized.indexOf(
+          trimmed
+        );
+
+      const before =
+        normalized.slice(
+          Math.max(
+            0,
+            contextIndex - 20
+          ),
+          contextIndex
+        );
+
+      if (
+        /(?:день|слайд|этап)\s*$/i.test(
+          before
+        )
+      ) {
+        return;
+      }
+
+      addViolation(
+        trimmed,
+        "Конкретное числовое утверждение требует подтверждения во входных данных.",
+        `Во входных данных числа не подтверждены автоматически: ${businessInfo}`,
+        "abstract"
+      );
+    }
+  );
+
+  /*
+  ----------------------------------------
+  3. STRONG PERSONAL FACT PATTERNS
+  ----------------------------------------
+  */
+
+  const personalPatterns = [
+    {
+      regex:
+        /\b(?:я|мы|у нас|у меня|мой|моя|моё|мои|наш|наша|наше|наши)\b[^.!?\n]{0,140}\b(?:клиент|клиента|клиентов|помог|помога|работа|работал|работали|использу|используем|делаю|делаем|создаю|создаём|провожу|проводим|гарантир|получа|достиг|сделал|сделали|заработ|продал|продали)\b/gi,
+      reason:
+        "Фраза содержит конкретное утверждение от имени бизнеса, но его фактическая опора не гарантирована входными данными.",
+      repair:
+        "anchor_to_known_fact"
+    },
+    {
+      regex:
+        /\b(?:после работы со мной|после работы с нами|после обращения ко мне|после обращения к нам)\b/gi,
+      reason:
+        "Утверждается конкретный результат взаимодействия с автором, который не подтверждён входными данными.",
+      repair:
+        "anchor_to_known_fact"
+    },
+    {
+      regex:
+        /\b(?:мы уже|я уже|у нас уже|я помог|мы помогли|мы сделали|я сделал|мы получили|я получил)\b[^.!?\n]{0,120}/gi,
+      reason:
+        "Утверждается конкретный прошлый опыт или результат бизнеса без подтверждения.",
+      repair:
+        "anchor_to_known_fact"
+    }
+  ];
+
+  personalPatterns.forEach(
+    pattern => {
+      const matches =
+        normalized.match(
+          pattern.regex
+        ) || [];
+
+      matches
+        .slice(0, 5)
+        .forEach(
+          match => {
+            addViolation(
+              match.trim(),
+              pattern.reason,
+              `Входные данные: бизнес="${businessInfo}", аудитория="${targetAudience}", цель="${contentGoal}", стиль="${contentStyle}". Конкретный факт не указан.`,
+              pattern.repair
+            );
+          }
+        );
+    }
+  );
+
+  /*
+  ----------------------------------------
+  4. PROMISE / RESULT PATTERNS
+  ----------------------------------------
+  */
+
+  const promisePatterns = [
+    {
+      regex:
+        /\b(?:навсегда|гарантированно|гарантирует|гарантируем|гарантирую|точно получите|точно получишь|получите результат|получишь результат|обеспечит результат|обеспечит|решит проблему навсегда)\b/gi,
+      reason:
+        "Фраза содержит обещание гарантированного или конкретного результата, который не подтверждён входными данными.",
+      repair:
+        "abstract"
+    },
+    {
+      regex:
+        /\b(?:что вы получите после|что получает клиент после|результат работы со мной|результат работы с нами)\b/gi,
+      reason:
+        "Фраза утверждает конкретный результат работы с бизнесом без подтверждения такого результата во входных данных.",
+      repair:
+        "anchor_to_known_fact"
+    }
+  ];
+
+  promisePatterns.forEach(
+    pattern => {
+      const matches =
+        normalized.match(
+          pattern.regex
+        ) || [];
+
+      matches
+        .slice(0, 5)
+        .forEach(
+          match => {
+            addViolation(
+              match.trim(),
+              pattern.reason,
+              "Входные данные не содержат подтверждения конкретного обещанного результата.",
+              pattern.repair
+            );
+          }
+        );
+    }
+  );
+
+  /*
+  ----------------------------------------
+  5. CTA RESOURCE PROMISES
+  ----------------------------------------
+  */
+
+  const resourcePatterns = [
+    {
+      regex:
+        /(?:пришлю|отправлю|дам|получите|получишь|выдам|скину)\s+(?:вам\s+)?(?:чек[- ]?лист|гайд|гайд[а-я]*|консультаци[а-я]*|расч[её]т|подарок|кейс|разбор|скидк[а-я]*|материал[а-я]*)/gi,
+      reason:
+        "CTA обещает конкретный ресурс, наличие которого не подтверждено входными данными.",
+      repair:
+        "replace_cta"
+    }
+  ];
+
+  resourcePatterns.forEach(
+    pattern => {
+      const matches =
+        normalized.match(
+          pattern.regex
+        ) || [];
+
+      matches
+        .slice(0, 5)
+        .forEach(
+          match => {
+            addViolation(
+              match.trim(),
+              pattern.reason,
+              "Во входных данных нет подтверждения наличия такого ресурса.",
+              pattern.repair
+            );
+          }
+        );
+    }
+  );
+
+  /*
+  ----------------------------------------
+  6. PROCESS / WORKFLOW CLAIMS
+  ----------------------------------------
+  */
+
+  const processPatterns = [
+    {
+      regex:
+        /\b(?:этап[а-я]* работы|этап[а-я]* работы со мной|процесс работы со мной|процесс работы с нами|закулисье работы|изнутри работы|внутренний процесс|рабочий процесс)\b/gi,
+      reason:
+        "Утверждается наличие конкретного рабочего процесса или этапов работы, которые не описаны во входных данных.",
+      repair:
+        "conditional"
+    }
+  ];
+
+  processPatterns.forEach(
+    pattern => {
+      const matches =
+        normalized.match(
+          pattern.regex
+        ) || [];
+
+      matches
+        .slice(0, 5)
+        .forEach(
+          match => {
+            addViolation(
+              match.trim(),
+              pattern.reason,
+              "Во входных данных конкретный процесс работы не описан.",
+              pattern.repair
+            );
+          }
+        );
+    }
+  );
+
+  /*
+  ----------------------------------------
+  7. CONCRETE OBJECT CLAIMS
+  ----------------------------------------
+  */
+
+  const objectPatterns = [
+    {
+      regex:
+        /\b(?:экран ноутбука|ноутбук|таблица|блокнот|кабинет|офис|стол|стул|команда|сотрудник|оборудование|упаковка|витрина|помещение|интерьер|цех|склад)\b/gi,
+      reason:
+        "Указан конкретный объект, наличие которого у бизнеса не подтверждено входными данными.",
+      repair:
+        "conditional"
+    }
+  ];
+
+  objectPatterns.forEach(
+    pattern => {
+      const matches =
+        normalized.match(
+          pattern.regex
+        ) || [];
+
+      matches
+        .slice(0, 10)
+        .forEach(
+          match => {
+            addViolation(
+              match.trim(),
+              pattern.reason,
+              "Во входных данных наличие этого объекта не подтверждено.",
+              pattern.repair
+            );
+          }
+        );
+    }
+  );
+
+  /*
+  ----------------------------------------
+  8. UNCONFIRMED HISTORY / PERSONAL STORY
+  ----------------------------------------
+  */
+
+  const historyPatterns = [
+    {
+      regex:
+        /\b(?:когда я только начинал|когда мы только начинали|в начале своего пути|в начале нашего пути|мой первый клиент|наш первый клиент|однажды со мной|однажды мы|я столкнулся с|мы столкнулись с)\b/gi,
+      reason:
+        "Создаётся конкретная личная история или история бизнеса, которой нет во входных данных.",
+      repair:
+        "anchor_to_known_fact"
+    }
+  ];
+
+  historyPatterns.forEach(
+    pattern => {
+      const matches =
+        normalized.match(
+          pattern.regex
+        ) || [];
+
+      matches
+        .slice(0, 5)
+        .forEach(
+          match => {
+            addViolation(
+              match.trim(),
+              pattern.reason,
+              "Во входных данных нет соответствующей личной истории.",
+              pattern.repair
+            );
+          }
+        );
+    }
+  );
+
+  return violations.slice(0, 25);
+}
+
+/*
+========================================
+V4 AI AUDITOR
+========================================
+*/
 
 function buildAuditPrompt({
   contentType,
@@ -495,54 +1076,60 @@ function buildAuditPrompt({
   contentGoal,
   reelsTopic,
   contentStyle,
-  generatedContent
+  generatedContent,
+  deterministicViolations
 }) {
+  const deterministicBlock =
+    deterministicViolations.length
+      ? deterministicViolations
+          .map(
+            (item, index) =>
+              `${index + 1}. Фрагмент: «${item.text}»
+Причина предварительной проверки: ${item.reason}
+Тип исправления: ${item.repair_type}`
+          )
+          .join("\n\n")
+      : "Детерминированная проверка не обнаружила автоматических нарушений.";
+
   return `
-Ты — строгий AI-редактор и фактчекер сервиса «МОЙ КОНТЕНТ-КОНСТРУКТОР».
+Ты — сверхстрогий AI-фактчекер сервиса «МОЙ КОНТЕНТ-КОНСТРУКТОР».
 
-Твоя задача — проверить готовый контент на ДВУХ уровнях одновременно.
+Твоя задача — проверить готовый контент НЕ НА КРАСОТУ И НЕ НА ПРОДАЮЩИЙ ЭФФЕКТ.
 
-====================
-УРОВЕНЬ A — ФАКТОЛОГИЯ
-====================
-
-Нельзя выдавать выдуманные сведения о конкретном бизнесе.
-
-Главное правило:
-
-ЕСЛИ КОНКРЕТНОЕ УТВЕРЖДЕНИЕ НЕ ИМЕЕТ ПРЯМОЙ ИЛИ ОЧЕВИДНОЙ СМЫСЛОВОЙ ОПОРЫ В ДАННЫХ КЛИЕНТА — ОНО НЕ ДОЛЖНО ВЫДАВАТЬСЯ ЗА ФАКТ.
+Твоя задача — определить, какие конкретные утверждения в нём НЕ ПОДТВЕРЖДЕНЫ входными данными клиента.
 
 ====================
-УРОВЕНЬ B — ПОЛЕЗНАЯ КОНКРЕТИКА
+ГЛАВНЫЙ ПРИНЦИП
 ====================
 
-После исправления контент не должен превращаться в безликий набор фраз:
+Для каждого конкретного утверждения мысленно задай вопрос:
 
-«про продукт»,
-«про услугу»,
-«про аудиторию»,
-«покажите ценность»,
-«вызовите доверие».
+«ГДЕ ИМЕННО В ИСХОДНЫХ ДАННЫХ КЛИЕНТА ЭТО ПОДТВЕРЖДЕНО?»
 
-Если конкретный факт нельзя подтвердить, его можно заменить на:
+Если конкретного подтверждения нет — это нарушение.
 
-- конкретный вопрос;
-- маркетинговый ракурс;
-- условный сценарий;
-- наблюдение общего характера;
-- сравнение;
-- метафору;
-- практический способ раскрыть подтверждённую тему;
-- содержательную рекомендацию.
+Не рассуждай:
 
-То есть:
+«Это наверняка бывает у такого бизнеса».
 
-НЕ ПРИДУМЫВАЙ ФАКТ.
+Не рассуждай:
 
-НО И НЕ УБИВАЙ СМЫСЛ.
+«Это логично».
+
+Не рассуждай:
+
+«Скорее всего у эксперта есть это».
+
+Не рассуждай:
+
+«Это обычно происходит».
+
+Нам нужно не то, что МОЖЕТ быть правдой.
+
+Нам нужно то, что МОЖНО ОБОСНОВАТЬ входными данными.
 
 ====================
-ИСХОДНЫЕ ДАННЫЕ КЛИЕНТА
+ДАННЫЕ КЛИЕНТА
 ====================
 
 Формат:
@@ -558,277 +1145,303 @@ ${targetAudience}
 ${contentGoal}
 
 Тема:
-${reelsTopic || "не задана отдельно"}
+${reelsTopic || "не задана"}
 
 Стиль:
 ${contentStyle}
 
 ====================
-ГОТОВЫЙ КОНТЕНТ
+КОНТЕНТ
 ====================
 
 ${generatedContent}
 
 ====================
-ЧТО МОЖНО СЧИТАТЬ ПОДТВЕРЖДЁННЫМ
+ПРЕДВАРИТЕЛЬНЫЕ НАХОДКИ ПРОГРАММНОЙ ПРОВЕРКИ
 ====================
 
-Разрешено:
+${deterministicBlock}
 
-1. Факты, прямо сообщённые клиентом.
+ВАЖНО:
 
-2. Корректные смысловые перефразирования этих фактов.
+Эти находки НЕ ЯВЛЯЮТСЯ автоматически правильными.
 
-3. Очевидные логические связи, которые НЕ добавляют новый конкретный факт.
+Проверь их самостоятельно.
 
-4. Маркетинговые задачи:
-- привлечь внимание;
-- вызвать интерес;
-- показать экспертность;
-- вызвать доверие;
-- побудить к действию.
+Также обязательно ищи другие нарушения.
 
-5. Метафоры.
+====================
+ЧТО РАЗРЕШЕНО
+====================
 
-6. Сравнения.
+Разрешены:
 
-7. Юмор.
+1. Факты, прямо указанные клиентом.
 
-8. Гиперболы.
+2. Перефразирование подтверждённых фактов.
 
-9. Эмоциональные образы.
+3. Обычные маркетинговые задачи.
 
-10. Условные рекомендации:
-- «можно показать...»;
-- «представьте...»;
-- «если у вас есть...»;
-- «например...»;
-- «попробуйте снять...».
+4. Вопросы аудитории.
 
-11. Универсальные съёмочные и монтажные приёмы:
+5. Условные рекомендации.
+
+Например:
+
+«Если у вас есть рабочее пространство, можно показать его».
+
+6. Художественные сценарии:
+
+«Представьте ситуацию...»
+
+7. Метафоры.
+
+8. Сравнения.
+
+9. Юмор.
+
+10. Гиперболы.
+
+11. Эмоциональные образы.
+
+12. Универсальные съёмочные приёмы:
+
 - текст на экране;
 - субтитры;
-- графика;
 - монтаж;
+- графика;
 - голос за кадром;
 - крупный план;
-- смена кадров;
-- анимация текста.
-
-Но съёмочный приём НЕ должен утверждать, что конкретный объект уже существует у клиента.
+- переход;
+- анимация.
 
 ====================
-ЧТО ОБЯЗАТЕЛЬНО ПРОВЕРЯТЬ
+ЧТО НЕЛЬЗЯ
 ====================
 
-Особенно строго проверяй:
+Нельзя без подтверждения утверждать наличие:
 
-- цены;
-- стоимость;
-- скидки;
-- акции;
-- проценты;
-- количество;
-- сроки;
-- даты;
-- возраст;
-- длительность;
+- клиентов;
+- сотрудников;
+- команды;
+- офиса;
+- кабинета;
+- помещения;
+- оборудования;
+- ноутбука;
+- таблиц;
+- блокнотов;
+- упаковки;
+- конкретного продукта;
+- конкретной услуги;
+- конкретных процессов;
+- этапов работы;
+- технологий;
+- материалов;
+- ингредиентов;
+- отзывов;
+- кейсов;
+- достижений.
+
+Нельзя без подтверждения утверждать:
+
 - результаты;
 - гарантии;
-- кейсы;
-- отзывы;
-- клиентов;
-- подписчиков;
-- продажи;
-- достижения;
+- эффективность;
+- конкретные свойства;
 - историю бизнеса;
-- личный опыт;
+- личную историю;
 - прошлые события;
-- ошибки бизнеса;
-- провалы;
-- конкретные продукты;
-- конкретные свойства продукта;
-- конкретные услуги;
-- конкретные этапы работы;
-- конкретные процессы;
-- оборудование;
-- помещения;
-- интерьер;
-- сотрудников;
-- локации;
-- технологии;
-- методы;
-- материалы;
-- ингредиенты;
-- упаковку;
-- конкретные действия бизнеса;
-- конкретные обещания.
+- конкретный опыт;
+- конкретные цифры;
+- цены;
+- скидки;
+- сроки;
+- даты.
 
 ====================
-ОСОБОЕ ПРАВИЛО ПЕРВОГО ЛИЦА
+ПЕРВОЕ ЛИЦО
 ====================
 
 Особенно внимательно проверяй:
 
-«я»,
-«мы»,
-«у нас»,
-«мой»,
-«наш»,
-«наша».
+я
+мы
+у нас
+у меня
+мой
+моя
+мой бизнес
+наш
+наша
+наше
 
-Если после них появляется конкретный факт, которого нет во входных данных, это нарушение.
+Если после этого появляется конкретный факт — требуется подтверждение.
 
 Например:
 
-«Мы уже помогли 100 клиентам» — нарушение, если числа нет.
+«Мы помогли 100 клиентам».
 
-«Мы используем такой подход» — нарушение, если подход не указан.
+Если 100 клиентов нет во входных данных:
 
-«Я столкнулся с этой проблемой» — нарушение, если такая история не дана.
+VIOLATION.
+
+«Мы используем авторский подход».
+
+Если авторский подход не описан:
+
+VIOLATION.
+
+====================
+РЕЗУЛЬТАТЫ
+====================
+
+Особенно строго проверяй:
+
+«получает клиент»,
+«клиент получает»,
+«после работы со мной»,
+«после работы с нами»,
+«решить проблему»,
+«решить проблему навсегда»,
+«получить результат»,
+«гарантированный результат»,
+«станет легче»,
+«увеличится»,
+«вырастет»,
+«сэкономит»,
+«заработает».
+
+Если это утверждается как реальный результат конкретного бизнеса и подтверждения нет — VIOLATION.
 
 ====================
 ЧИСЛА
 ====================
 
-Любое конкретное число считается фактом, если оно не относится к технической нумерации:
+Любое конкретное число — потенциальный факт.
 
-- День 1;
-- День 2;
-- Слайд 1;
-- Слайд 2.
+Исключения:
 
-Например:
+День 1
+День 2
+Слайд 1
+Слайд 2
 
-«15 секунд»,
-«5 ошибок»,
-«90% клиентов»,
-«3 этапа»,
-«10 лет опыта»
-
-нельзя считать подтверждёнными без соответствующей информации во входных данных.
+Остальные числа требуют проверки.
 
 ====================
 CTA
 ====================
 
-Обычный CTA разрешён:
+Разрешены:
 
 - написать комментарий;
 - сохранить;
 - поделиться;
 - поставить реакцию;
-- ответить на вопрос;
+- ответить;
 - выбрать вариант;
 - рассказать о своём опыте.
 
-Но нельзя обещать неподтверждённый ресурс:
+Не разрешены неподтверждённые обещания:
 
-- «пришлю чек-лист»;
-- «отправлю гайд»;
-- «дам консультацию»;
-- «сделаю расчёт»;
-- «пришлю кейс»;
-- «дам скидку»;
-- «отправлю подарок».
-
-Если такого ресурса нет во входных данных — это нарушение.
-
-====================
-СЦЕНАРНЫЕ ИДЕИ
-====================
-
-Важно различать:
-
-1. СУЩЕСТВУЮЩИЙ ФАКТ.
-
-«Эксперт показывает свой кабинет».
-
-Если наличие кабинета не подтверждено — нарушение.
-
-2. УСЛОВНУЮ РЕКОМЕНДАЦИЮ.
-
-«Если у вас есть рабочее пространство, можно начать ролик с его общего плана».
-
-Это допустимо.
-
-3. ХУДОЖЕСТВЕННЫЙ ПРИЁМ.
-
-«Представьте ситуацию, в которой клиент откладывает решение».
-
-Это допустимо, если понятно, что это пример/сценарий, а не реальный клиент.
-
-====================
-ВАЖНЫЙ БАЛАНС
-====================
-
-НЕ считай нарушением сам факт того, что формулировка является общей.
-
-Например:
-
-«Разберите три распространённых заблуждения аудитории о выборе решения».
-
-Это может быть нормальной контентной идеей.
-
-Но:
-
-«Ваши клиенты уже три года считают, что...» —
-
-это конкретное утверждение о клиентах и требует подтверждения.
+- пришлю чек-лист;
+- отправлю гайд;
+- дам консультацию;
+- сделаю расчёт;
+- отправлю кейс;
+- дам скидку;
+- сделаю личный разбор.
 
 ====================
 ПЛЕЙСХОЛДЕРЫ
 ====================
 
-Любой незаполненный плейсхолдер:
+Любой незаполненный:
 
-[сфера/продукт]
+[сфера]
+[продукт]
 [результат]
-[адрес]
 [цена]
+[адрес]
 [название]
 
 является нарушением.
 
-Но НЕ нужно заменять его другим выдуманным значением.
-
 ====================
-КАК РЕШАТЬ СПОРНЫЕ СЛУЧАИ
+МЕТАФОРЫ
 ====================
 
-Если фраза может быть прочитана одновременно как:
+НЕ СЧИТАЙ нарушением:
 
-1. реальный факт;
+«антидепрессант дня»
+«контентный двигатель»
+«маркетинговый айсберг»
+«старые грабли»
 
-или
-
-2. условная творческая рекомендация,
-
-проверь контекст.
-
-Если она звучит как утверждение о конкретном бизнесе — проверяй как факт.
-
-Если явно обозначена как условный пример, рекомендация, метафора или художественный сценарий — не считай её нарушением.
+если очевидно, что это образная речь.
 
 ====================
-НЕ ОЦЕНИВАЙ
+КЛЮЧЕВОЕ РАЗЛИЧИЕ
 ====================
 
-Не проверяй:
+НАРУШЕНИЕ:
 
-- насколько идея хорошая;
-- насколько текст продающий;
-- насколько красив стиль;
-- насколько сильный хук;
-- насколько интересна тема.
+«Эксперт показывает свой кабинет».
 
-Проверяй только:
+Это утверждение о существующем объекте.
 
-1. фактологическую опору;
-2. наличие неподтверждённых конкретных деталей;
-3. наличие незаполненных плейсхолдеров;
-4. наличие неподтверждённых обещаний;
-5. потерю связи с данными клиента.
+ДОПУСТИМО:
+
+«Если у вас есть рабочее пространство, можно начать ролик с его общего плана».
+
+Это условная рекомендация.
+
+НАРУШЕНИЕ:
+
+«После работы со мной клиент получает уверенность».
+
+Это утверждение о результате.
+
+ДОПУСТИМО:
+
+«Можно раскрыть, какую ценность получает человек от решения своей задачи».
+
+Это контентный ракурс без утверждения конкретного результата.
+
+====================
+НЕ НАКАЗЫВАЙ ЗА ОБЩНОСТЬ
+====================
+
+Фраза:
+
+«Разберите распространённые ошибки при выборе решения».
+
+может быть допустимой.
+
+Но:
+
+«Ваши клиенты постоянно совершают эти три ошибки».
+
+требует подтверждения.
+
+====================
+ОБЯЗАТЕЛЬНЫЙ ФИНАЛЬНЫЙ ТЕСТ
+====================
+
+Перед ответом проверь:
+
+1. Все ли конкретные факты имеют опору?
+2. Все ли числа подтверждены?
+3. Все ли результаты подтверждены?
+4. Все ли личные истории подтверждены?
+5. Все ли процессы подтверждены?
+6. Все ли объекты подтверждены?
+7. Все ли CTA-ресурсы существуют по входным данным?
+8. Нет ли плейсхолдеров?
+9. Не принял ли ты логичное предположение за факт?
+10. Не перепутал ли ты условный сценарий с реальным утверждением?
+11. Не является ли подозрительная фраза просто метафорой?
 
 ====================
 ФОРМАТ ОТВЕТА
@@ -836,22 +1449,22 @@ CTA
 
 Верни ТОЛЬКО JSON.
 
-Если всё допустимо:
+Если нарушений нет:
 
 {
   "passed": true,
   "violations": []
 }
 
-Если есть нарушения:
+Если есть хотя бы одно:
 
 {
   "passed": false,
   "violations": [
     {
-      "text": "точный фрагмент из контента",
-      "reason": "почему это неподтверждённый факт",
-      "support": "какого подтверждения не хватает",
+      "text": "точный фрагмент",
+      "reason": "почему нет фактической опоры",
+      "support": "чего не хватает во входных данных",
       "repair_type": "delete | abstract | conditional | replace_cta | anchor_to_known_fact"
     }
   ]
@@ -859,19 +1472,11 @@ CTA
 
 КРИТИЧЕСКИ ВАЖНО:
 
-Если violations содержит хотя бы один элемент,
-passed ДОЛЖЕН быть false.
+Если violations НЕ пустой, passed ОБЯЗАТЕЛЬНО false.
 
-Не возвращай passed=true при наличии violations.
-
-Максимум 15 нарушений.
+Максимум 20 нарушений.
 `;
 }
-
-
-// ============================================================
-// AI AUDITOR
-// ============================================================
 
 async function auditGeneratedContent({
   token,
@@ -884,101 +1489,195 @@ async function auditGeneratedContent({
   generatedContent,
   label
 }) {
-  const prompt = buildAuditPrompt({
-    contentType,
-    businessInfo,
-    targetAudience,
-    contentGoal,
-    reelsTopic,
-    contentStyle,
-    generatedContent
-  });
-
-  try {
-    const audit = await generateWithGigaChat({
-      token,
-      prompt,
-      temperature: 0.1,
-      maxTokens: 550,
-      label: `${label} AI AUDITOR`
+  const deterministicViolations =
+    getDeterministicViolations({
+      generatedContent,
+      businessInfo,
+      targetAudience,
+      contentGoal,
+      contentStyle,
+      contentType
     });
 
-    const parsed = parseAuditorJson(audit.result);
+  console.log(
+    `[${label} V4] Deterministic violations: ${deterministicViolations.length}`
+  );
+
+  const prompt =
+    buildAuditPrompt({
+      contentType,
+      businessInfo,
+      targetAudience,
+      contentGoal,
+      reelsTopic,
+      contentStyle,
+      generatedContent,
+      deterministicViolations
+    });
+
+  try {
+    const audit =
+      await generateWithGigaChat({
+        token,
+        prompt,
+        temperature: 0.05,
+        maxTokens: 750,
+        label:
+          `${label} V4 AI AUDITOR`
+      });
+
+    const parsed =
+      parseAuditorJson(
+        audit.result
+      );
 
     if (
       !parsed ||
-      typeof parsed.passed !== "boolean" ||
-      !Array.isArray(parsed.violations)
+      typeof parsed.passed !==
+        "boolean" ||
+      !Array.isArray(
+        parsed.violations
+      )
     ) {
       console.error(
-        "[AI AUDITOR] Invalid auditor response. Failing open."
+        "[V4 AI AUDITOR] Invalid auditor response."
       );
+
+      /*
+      Если AI-аудитор сломался,
+      детерминированные нарушения
+      всё равно сохраняем.
+      */
 
       return {
         available: false,
-        passed: true,
-        violations: [],
+        passed:
+          deterministicViolations.length ===
+          0,
+        violations:
+          deterministicViolations,
+        deterministicViolations,
+        aiViolations: [],
         raw: audit.result
       };
     }
 
-    const violations = parsed.violations
-      .filter(
-        item =>
-          item &&
-          typeof item.text === "string" &&
-          typeof item.reason === "string"
-      )
-      .slice(0, 15)
-      .map(item => ({
-        text: item.text.trim(),
-        reason: item.reason.trim(),
-        support:
-          typeof item.support === "string"
-            ? item.support.trim()
-            : "",
-        repair_type:
-          typeof item.repair_type === "string"
-            ? item.repair_type.trim()
-            : "abstract"
-      }))
-      .filter(item => item.text && item.reason);
+    const aiViolations =
+      parsed.violations
+        .filter(
+          item =>
+            item &&
+            typeof item.text ===
+              "string" &&
+            typeof item.reason ===
+              "string"
+        )
+        .slice(0, 20)
+        .map(item => ({
+          text:
+            item.text.trim(),
+          reason:
+            item.reason.trim(),
+          support:
+            typeof item.support ===
+            "string"
+              ? item.support.trim()
+              : "",
+          repair_type:
+            typeof item.repair_type ===
+            "string"
+              ? item.repair_type.trim()
+              : "abstract",
+          source:
+            "ai"
+        }))
+        .filter(
+          item =>
+            item.text &&
+            item.reason
+        );
+
+    /*
+    Объединяем deterministic + AI,
+    удаляя дубли.
+    */
+
+    const combined = [
+      ...deterministicViolations,
+      ...aiViolations
+    ];
+
+    const unique = [];
+
+    combined.forEach(
+      item => {
+        const duplicate =
+          unique.some(
+            existing =>
+              existing.text
+                .toLowerCase() ===
+                item.text
+                  .toLowerCase()
+          );
+
+        if (!duplicate) {
+          unique.push(item);
+        }
+      }
+    );
+
+    const violations =
+      unique.slice(0, 25);
+
+    const passed =
+      violations.length === 0;
 
     console.log(
-      `[AI AUDITOR] Passed: ${parsed.passed}`
+      `[V4 AUDITOR] AI passed: ${parsed.passed}`
     );
 
     console.log(
-      `[AI AUDITOR] Violations: ${violations.length}`
+      `[V4 AUDITOR] AI violations: ${aiViolations.length}`
+    );
+
+    console.log(
+      `[V4 AUDITOR] Combined violations: ${violations.length}`
     );
 
     return {
       available: true,
-      passed:
-        parsed.passed &&
-        violations.length === 0,
+      passed,
       violations,
+      deterministicViolations,
+      aiViolations,
       raw: parsed
     };
   } catch (error) {
     console.error(
-      "[AI AUDITOR] Failed. Failing open:",
+      "[V4 AI AUDITOR] Failed:",
       error.message
     );
 
+    /*
+    Fail-open для AI,
+    но НЕ fail-open для
+    детерминированных проверок.
+    */
+
     return {
       available: false,
-      passed: true,
-      violations: [],
-      error: error.message
+      passed:
+        deterministicViolations.length ===
+        0,
+      violations:
+        deterministicViolations,
+      deterministicViolations,
+      aiViolations: [],
+      error:
+        error.message
     };
   }
 }
-
-
-// ============================================================
-// REPAIR PROMPT V3
-// ============================================================
 
 function buildRepairPrompt({
   contentType,
@@ -990,36 +1689,37 @@ function buildRepairPrompt({
   generatedContent,
   violations
 }) {
-  const violationBlock = violations
-    .map(
-      (item, index) =>
-        `${index + 1}. Фрагмент: «${item.text}»\n` +
-        `Причина: ${item.reason}\n` +
-        `Опора: ${item.support || "не указана"}\n` +
-        `Тип исправления: ${item.repair_type || "abstract"}`
-    )
-    .join("\n\n");
+  const violationBlock =
+    violations
+      .map(
+        (item, index) =>
+          `${index + 1}. Фрагмент: «${item.text}»
+Причина: ${item.reason}
+Опора: ${item.support || "не указана"}
+Тип исправления: ${item.repair_type || "abstract"}`
+      )
+      .join("\n\n");
 
   return `
 Ты — финальный AI-редактор сервиса «МОЙ КОНТЕНТ-КОНСТРУКТОР».
 
-Твоя задача — исправить готовый контент после фактологического аудита.
+Тебе дан контент, в котором найдено одно или несколько неподтверждённых утверждений.
 
-ГЛАВНАЯ ЦЕЛЬ:
+Твоя задача:
 
-НЕ ПРОСТО УДАЛИТЬ НАРУШЕНИЯ.
+НЕ ПРОСТО УДАЛИТЬ ОШИБКИ.
 
-Нужно одновременно:
+Нужно:
 
-1. Убрать неподтверждённые факты.
-2. Сохранить исходную маркетинговую мысль.
-3. Сохранить конкретность.
-4. Сохранить полезность.
-5. Сохранить стиль.
-6. Не добавить новых фактов.
+1. убрать неподтверждённые факты;
+2. сохранить маркетинговую мысль;
+3. сохранить полезность;
+4. сохранить конкретность;
+5. сохранить стиль;
+6. НЕ ДОБАВИТЬ НОВЫХ ФАКТОВ.
 
 ====================
-ИСХОДНЫЕ ДАННЫЕ
+ДАННЫЕ КЛИЕНТА
 ====================
 
 Формат:
@@ -1035,13 +1735,13 @@ ${targetAudience}
 ${contentGoal}
 
 Тема:
-${reelsTopic || "не задана отдельно"}
+${reelsTopic || "не задана"}
 
 Стиль:
 ${contentStyle}
 
 ====================
-НАЙДЕННЫЕ НАРУШЕНИЯ
+НАРУШЕНИЯ
 ====================
 
 ${violationBlock}
@@ -1053,45 +1753,71 @@ ${violationBlock}
 ${generatedContent}
 
 ====================
-ПРАВИЛА ИСПРАВЛЕНИЯ
+АЛГОРИТМ ИСПРАВЛЕНИЯ
 ====================
 
-1. Исправь каждое найденное нарушение.
+Для каждого нарушения:
 
-2. НЕ ДОБАВЛЯЙ НИКАКИХ НОВЫХ РЕАЛЬНЫХ ФАКТОВ.
+ШАГ 1.
 
-3. Никогда не заменяй неизвестную информацию выдуманной информацией.
+Попробуй привязать фразу к подтверждённому факту клиента.
 
-4. Если конкретный факт не подтверждён, сначала попробуй сохранить мысль через более безопасную формулировку.
+ШАГ 2.
 
-5. Если возможно — привяжи мысль к уже подтверждённым данным клиента.
+Если невозможно — преврати её в конкретный вопрос аудитории.
 
-6. Если это невозможно — переведи конкретику в условную рекомендацию.
+ШАГ 3.
 
-7. Если невозможно и это — подними уровень абстракции.
+Если невозможно — преврати её в условную рекомендацию.
 
-8. Удаляй деталь только в том случае, если сохранить её смысл без выдумывания невозможно.
+ШАГ 4.
+
+Если невозможно — сделай содержательную абстракцию.
+
+ШАГ 5.
+
+Только если ничего из этого невозможно — удали фрагмент.
 
 ====================
-ПРИОРИТЕТЫ ЗАМЕНЫ
+КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО
 ====================
 
-Используй следующий порядок:
+Не заменяй:
 
-ПРИОРИТЕТ 1:
-Привязать к подтверждённому факту клиента.
+неизвестный объект → другим объектом.
 
-ПРИОРИТЕТ 2:
-Сохранить мысль как конкретный вопрос аудитории.
+Например:
 
-ПРИОРИТЕТ 3:
-Сделать условный сценарий.
+«ноутбук» нельзя заменить на «телефон».
 
-ПРИОРИТЕТ 4:
-Сделать содержательную абстракцию.
+Не заменяй:
 
-ПРИОРИТЕТ 5:
-Удалить фрагмент.
+неизвестное число → другим числом.
+
+Например:
+
+«15 секунд» нельзя заменить на «10 секунд».
+
+Не заменяй:
+
+неизвестный результат → другим результатом.
+
+Не придумывай:
+
+- клиентов;
+- кейсы;
+- отзывы;
+- процессы;
+- этапы;
+- оборудование;
+- помещения;
+- личные истории;
+- цены;
+- скидки;
+- гарантии;
+- результаты;
+- продукты;
+- свойства продукта.
 
 ====================
 ПРИМЕРЫ
@@ -1099,60 +1825,64 @@ ${generatedContent}
 
 Плохо:
 
-«Напишите “МИФ”, и я отправлю вам чек-лист».
+«За 15–20 секунд покажите...»
 
-Если чек-лист не подтверждён.
+Хорошо:
 
-Лучше:
-
-«Напишите в комментариях, какой из этих мифов вы встречаете чаще всего».
+«Сделайте короткое динамичное видео...»
 
 ---
 
 Плохо:
 
-«Эксперт открывает комментарии под прошлым постом».
+«Что получает клиент после работы со мной».
 
-Лучше:
+Хорошо:
 
-«Если под публикациями уже есть вопросы аудитории, можно выбрать один из них для короткого разбора».
-
----
-
-Плохо:
-
-«За 15 секунд покажите три этапа работы».
-
-Если 15 секунд и три этапа не подтверждены.
-
-Лучше:
-
-«Сделайте короткое динамичное видео, в котором последовательно раскрывается логика работы».
+«Разберите, какую ценность может дать клиенту решение его задачи».
 
 ---
 
 Плохо:
 
-«Мы помогли десяткам клиентов».
+«Решить проблему навсегда».
 
-Лучше:
+Хорошо:
 
-«Покажите, какую задачу помогает решать ваш продукт или услуга».
+«Разобрать проблему и показать возможный путь к её решению».
 
 ---
 
 Плохо:
 
-«Если отметили 5 пунктов...»
+«Анатомия правильного выбора [услуги/продукта]».
 
-Если пять пунктов не обоснованы.
+Хорошо:
 
-Лучше:
+«Как выбрать подходящее решение: ключевые критерии».
 
-«Если вы узнали себя в нескольких пунктах, предложите аудитории поделиться своим опытом».
+---
+
+Плохо:
+
+«Мой личный стоп-лист: чего я никогда не делаю».
+
+Хорошо:
+
+«Какие принципы стоит учитывать при выборе специалиста».
+
+---
+
+Плохо:
+
+«Экран ноутбука с таблицей и записи в блокноте».
+
+Хорошо:
+
+«Можно показать визуальные детали рабочего процесса, если они действительно есть у вас».
 
 ====================
-ПРАВИЛА CTA
+CTA
 ====================
 
 Разрешены:
@@ -1171,176 +1901,70 @@ ${generatedContent}
 - гайд;
 - консультацию;
 - подарок;
-- скидку;
 - расчёт;
 - кейс;
+- скидку;
 - личный разбор;
 
-если соответствующий ресурс не подтверждён.
+если наличие такого ресурса не подтверждено.
 
 ====================
-МЕТАФОРЫ И ТВОРЧЕСТВО
+МЕТАФОРЫ
 ====================
 
-НЕ УДАЛЯЙ:
+Сохраняй:
 
 - метафоры;
-- сравнения;
 - юмор;
+- сравнения;
 - гиперболы;
-- эмоциональные образы;
-- яркие формулировки.
+- эмоциональные образы.
 
 Например:
 
 «антидепрессант дня»
 
-может остаться, если это очевидная образная формулировка, а не медицинское утверждение.
-
-====================
-СЪЁМКА
-====================
-
-Можно использовать:
-
-- текст на экране;
-- субтитры;
-- графику;
-- монтаж;
-- голос за кадром;
-- крупные планы;
-- переходы;
-- условные сцены.
-
-Но нельзя утверждать наличие у клиента:
-
-- кабинета;
-- офиса;
-- команды;
-- оборудования;
-- продукта в конкретной упаковке;
-- конкретного помещения;
-- отзывов;
-- комментариев;
-- клиентов;
-- кейсов.
-
-Если хочется использовать объект, которого нет во входных данных:
-
-«Если у вас есть такой объект, можно снять...»
-
-или:
-
-«Представьте такой кадр...»
-
-====================
-ЧИСЛА
-====================
-
-Если число не подтверждено:
-
-НЕ заменяй его другим числом.
-
-Например:
-
-«5 ошибок»
-
-не превращай в:
-
-«3 ошибки».
-
-Лучше:
-
-«несколько распространённых ошибок»
-
-или
-
-«ключевые ошибки».
-
-====================
-ЛИЧНЫЕ ИСТОРИИ
-====================
-
-Если история не дана клиентом:
-
-НЕ СОЗДАВАЙ новую историю.
-
-Вместо:
-
-«Когда я только начинал...»
-
-используй:
-
-«Разберите распространённую ситуацию...»
-
-или:
-
-«Покажите, с какой проблемой может столкнуться человек...»
-
-====================
-ПРОЦЕССЫ
-====================
-
-Если клиент не сообщил этапы работы:
-
-НЕ ПРИДУМЫВАЙ:
-
-- консультации;
-- созвоны;
-- анализ;
-- правки;
-- согласования;
-- оборудование;
-- технологии;
-- внутренние процессы.
-
-Лучше говорить о задаче, результате, выборе или проблеме на уровне, который подтверждается данными.
+может остаться.
 
 ====================
 ПЛЕЙСХОЛДЕРЫ
 ====================
 
-Никогда не оставляй:
+После исправления НЕ ДОЛЖНО ОСТАТЬСЯ:
 
-[сфера/продукт]
+[сфера]
+[продукт]
 [результат]
-[адрес]
 [цена]
+[адрес]
 [название]
 
-Если значение неизвестно — перепиши фразу без плейсхолдера.
+или аналогичных незаполненных шаблонов.
 
 ====================
-САМОПРОВЕРКА
+ФИНАЛЬНАЯ ПРОВЕРКА
 ====================
 
-Перед выдачей результата проверь:
+Перед ответом проверь:
 
-- Не появился ли новый факт?
-- Не появилось ли новое число?
-- Не появилась ли новая история?
-- Не появился ли новый клиент или кейс?
-- Не появился ли новый процесс?
-- Не появился ли новый объект?
-- Не появился ли новый ресурс для CTA?
-- Не появился ли плейсхолдер?
-- Не потерялась ли связь с бизнесом?
-- Не стал ли текст слишком общим?
-- Сохранилась ли исходная маркетинговая мысль?
-- Сохранился ли стиль?
+- каждый конкретный факт;
+- каждое число;
+- каждый результат;
+- каждую личную историю;
+- каждый объект;
+- каждый процесс;
+- каждый CTA;
+- каждый плейсхолдер.
 
-Если можно сохранить конкретность без выдумывания — ОБЯЗАТЕЛЬНО сохраняй её.
+Если факт неизвестен — НЕ ПРИДУМЫВАЙ.
+
+Но постарайся сохранить исходную маркетинговую мысль.
 
 Верни только исправленный готовый контент.
 
-Не объясняй свои исправления.
+Не объясняй исправления.
 `;
 }
-
-
-// ============================================================
-// REPAIR
-// ============================================================
 
 async function repairGeneratedContent({
   token,
@@ -1354,30 +1978,27 @@ async function repairGeneratedContent({
   violations,
   label
 }) {
-  const prompt = buildRepairPrompt({
-    contentType,
-    businessInfo,
-    targetAudience,
-    contentGoal,
-    reelsTopic,
-    contentStyle,
-    generatedContent,
-    violations
-  });
+  const prompt =
+    buildRepairPrompt({
+      contentType,
+      businessInfo,
+      targetAudience,
+      contentGoal,
+      reelsTopic,
+      contentStyle,
+      generatedContent,
+      violations
+    });
 
   return generateWithGigaChat({
     token,
     prompt,
-    temperature: 0.15,
-    maxTokens: 900,
-    label: `${label} REPAIR`
+    temperature: 0.12,
+    maxTokens: 1000,
+    label:
+      `${label} V4 REPAIR`
   });
 }
-
-
-// ============================================================
-// POST FILTER V3
-// ============================================================
 
 async function postFilterGeneratedContent({
   token,
@@ -1391,7 +2012,7 @@ async function postFilterGeneratedContent({
   label
 }) {
   console.log(
-    `[${label}] Starting AI fact audit...`
+    `[${label}] Starting V4 audit...`
   );
 
   const firstAudit =
@@ -1407,20 +2028,19 @@ async function postFilterGeneratedContent({
       label
     });
 
-  if (
-    !firstAudit.available ||
-    firstAudit.passed
-  ) {
+  if (firstAudit.passed) {
     return {
-      result: generatedContent,
-      audit: firstAudit,
+      result:
+        generatedContent,
+      audit:
+        firstAudit,
       repaired: false,
       secondAudit: null
     };
   }
 
   console.log(
-    `[${label}] Violations detected. Starting one V3 repair pass...`
+    `[${label}] V4 violations detected: ${firstAudit.violations.length}`
   );
 
   try {
@@ -1434,7 +2054,8 @@ async function postFilterGeneratedContent({
         reelsTopic,
         contentStyle,
         generatedContent,
-        violations: firstAudit.violations,
+        violations:
+          firstAudit.violations,
         label
       });
 
@@ -1447,45 +2068,46 @@ async function postFilterGeneratedContent({
         contentGoal,
         reelsTopic,
         contentStyle,
-        generatedContent: repaired.result,
-        label: `${label} SECOND`
+        generatedContent:
+          repaired.result,
+        label:
+          `${label} SECOND`
       });
 
     if (
-      secondAudit.available &&
       !secondAudit.passed
     ) {
       console.warn(
-        `[${label}] Second audit still found violations. Returning repaired version without another loop.`
+        `[${label}] Second V4 audit still found ${secondAudit.violations.length} violations.`
       );
     }
 
     return {
-      result: repaired.result,
-      audit: firstAudit,
+      result:
+        repaired.result,
+      audit:
+        firstAudit,
       repaired: true,
       secondAudit
     };
   } catch (error) {
     console.error(
-      `[${label}] Repair failed. Returning original content:`,
+      `[${label}] Repair failed:`,
       error.message
     );
 
     return {
-      result: generatedContent,
-      audit: firstAudit,
+      result:
+        generatedContent,
+      audit:
+        firstAudit,
       repaired: false,
       secondAudit: null,
-      repair_error: error.message
+      repair_error:
+        error.message
     };
   }
 }
-
-
-// ============================================================
-// VALIDATION
-// ============================================================
 
 function validatePlanData({
   bridge_key,
@@ -1525,11 +2147,6 @@ function validatePlanData({
   return null;
 }
 
-
-// ============================================================
-// PLAN GENERATION
-// ============================================================
-
 async function generatePlanChunk({
   startDay,
   endDay,
@@ -1540,17 +2157,19 @@ async function generatePlanChunk({
   previousPlan,
   label
 }) {
-  const token = await getAccessToken();
+  const token =
+    await getAccessToken();
 
-  const prompt = buildPlanChunkPrompt({
-    startDay,
-    endDay,
-    businessInfo,
-    targetAudience,
-    contentGoal,
-    contentStyle,
-    previousPlan
-  });
+  const prompt =
+    buildPlanChunkPrompt({
+      startDay,
+      endDay,
+      businessInfo,
+      targetAudience,
+      contentGoal,
+      contentStyle,
+      previousPlan
+    });
 
   const generated =
     await generateWithGigaChat({
@@ -1571,24 +2190,110 @@ async function generatePlanChunk({
       contentGoal,
       reelsTopic: "",
       contentStyle,
-      generatedContent: generated.result,
+      generatedContent:
+        generated.result,
       label
     });
 
   return {
     ...generated,
-    result: filtered.result,
-    audit: filtered.audit,
-    repaired: filtered.repaired,
-    secondAudit: filtered.secondAudit,
-    repair_error: filtered.repair_error || null
+
+    result:
+      filtered.result,
+
+    audit:
+      filtered.audit,
+
+    repaired:
+      filtered.repaired,
+
+    secondAudit:
+      filtered.secondAudit,
+
+    repair_error:
+      filtered.repair_error || null
   };
 }
 
+function buildPostFilterResponse(
+  result
+) {
+  return {
+    auditor_available:
+      result.audit?.available ||
+      false,
 
-// ============================================================
-// PLAN HANDLER
-// ============================================================
+    first_audit_passed:
+      result.audit?.passed ??
+      null,
+
+    triggered:
+      !(result.audit?.passed ??
+        true),
+
+    repaired:
+      result.repaired ||
+      false,
+
+    violations_count:
+      result.audit?.violations
+        ?.length || 0,
+
+    violations:
+      result.audit?.violations ||
+      [],
+
+    deterministic_violations:
+      result.audit
+        ?.deterministicViolations ||
+      [],
+
+    ai_violations:
+      result.audit
+        ?.aiViolations ||
+      [],
+
+    repair_error:
+      result.repair_error ||
+      null,
+
+    second_audit_available:
+      result.secondAudit
+        ?.available ??
+      null,
+
+    second_audit_passed:
+      result.secondAudit
+        ?.passed ??
+      null,
+
+    second_audit_violations_count:
+      result.secondAudit
+        ?.violations?.length ||
+      0,
+
+    second_audit_violations:
+      result.secondAudit
+        ?.violations ||
+      [],
+
+    first_audit_raw:
+      result.audit?.raw ||
+      null,
+
+    second_audit_raw:
+      result.secondAudit?.raw ||
+      null,
+
+    first_audit_error:
+      result.audit?.error ||
+      null,
+
+    second_audit_error:
+      result.secondAudit?.error ||
+      null
+  };
+}
 
 async function handlePlanChunk(
   req,
@@ -1596,16 +2301,23 @@ async function handlePlanChunk(
   startDay,
   endDay
 ) {
-  const startedAt = Date.now();
+  const startedAt =
+    Date.now();
 
   console.log("");
-  console.log("====================================");
+  console.log(
+    "===================================="
+  );
   console.log(
     `PLAN CHUNK REQUEST: ${startDay}-${endDay}`
   );
-  console.log("====================================");
+  console.log(
+    "===================================="
+  );
 
-  if (generationInProgress) {
+  if (
+    !acquireGenerationLock()
+  ) {
     return res.status(429).json({
       ok: false,
       error:
@@ -1632,296 +2344,308 @@ async function handlePlanChunk(
     });
 
   if (validationError) {
+    releaseGenerationLock();
+
     const status =
-      validationError === "Invalid bridge_key" ||
-      validationError === "bridge_key is required"
+      validationError ===
+        "Invalid bridge_key" ||
+      validationError ===
+        "bridge_key is required"
         ? 401
         : 400;
 
     return res.status(status).json({
       ok: false,
-      error: validationError
+      error:
+        validationError
     });
   }
 
   const safePreviousPlan =
-    String(previous_plan || "").slice(-18000);
-
-  generationInProgress = true;
+    String(
+      previous_plan || ""
+    ).slice(-18000);
 
   try {
     const result =
       await generatePlanChunk({
         startDay,
         endDay,
-        businessInfo: business_info,
-        targetAudience: target_audience,
-        contentGoal: content_goal,
-        contentStyle: content_style,
-        previousPlan: safePreviousPlan,
+        businessInfo:
+          business_info,
+        targetAudience:
+          target_audience,
+        contentGoal:
+          content_goal,
+        contentStyle:
+          content_style,
+        previousPlan:
+          safePreviousPlan,
         label:
           `PLAN DAYS ${startDay}-${endDay}`
       });
 
     return res.json({
       ok: true,
-      start_day: startDay,
-      end_day: endDay,
-      model: GIGACHAT_MODEL,
-      status: result.status,
-      time_ms: Date.now() - startedAt,
-      result_length: result.result.length,
+      start_day:
+        startDay,
+      end_day:
+        endDay,
+      model:
+        GIGACHAT_MODEL,
+      status:
+        result.status,
+      time_ms:
+        Date.now() -
+        startedAt,
+      result_length:
+        result.result.length,
 
-      post_filter: {
-        auditor_available:
-          result.audit?.available || false,
+      post_filter:
+        buildPostFilterResponse(
+          result
+        ),
 
-        first_audit_passed:
-          result.audit?.passed ?? null,
-
-        triggered:
-          !(result.audit?.passed ?? true),
-
-        repaired:
-          result.repaired || false,
-
-        violations_count:
-          result.audit?.violations?.length || 0,
-
-        violations:
-          result.audit?.violations || [],
-
-        repair_error:
-          result.repair_error || null,
-
-        second_audit_available:
-          result.secondAudit?.available ?? null,
-
-        second_audit_passed:
-          result.secondAudit?.passed ?? null,
-
-        second_audit_violations_count:
-          result.secondAudit?.violations?.length || 0,
-
-        second_audit_violations:
-          result.secondAudit?.violations || [],
-
-        first_audit_raw:
-          result.audit?.raw || null,
-
-        second_audit_raw:
-          result.secondAudit?.raw || null,
-
-        first_audit_error:
-          result.audit?.error || null,
-
-        second_audit_error:
-          result.secondAudit?.error || null
-      },
-
-      reels_result: result.result
+      reels_result:
+        result.result
     });
   } catch (error) {
     return res.status(500).json({
       ok: false,
-      start_day: startDay,
-      end_day: endDay,
-      message: error.message,
-      status: error.response?.status,
-      response: error.response?.data,
-      time_ms: Date.now() - startedAt
+      start_day:
+        startDay,
+      end_day:
+        endDay,
+      message:
+        error.message,
+      status:
+        error.response?.status,
+      response:
+        error.response?.data,
+      time_ms:
+        Date.now() -
+        startedAt
     });
   } finally {
-    generationInProgress = false;
+    releaseGenerationLock();
   }
 }
 
-
-// ============================================================
-// HEALTH
-// ============================================================
-
-app.get("/health", (req, res) => {
-  res.json({
-    ok: true,
-    service: "content-constructor-gateway",
-    model: GIGACHAT_MODEL,
-    gigachat_key_configured: !!GIGACHAT_KEY,
-    bridge_key_configured: !!BRIDGE_KEY,
-    generation_in_progress:
-      generationInProgress
-  });
-});
-
-
-// ============================================================
-// ROOT
-// ============================================================
-
-app.get("/", (req, res) => {
-  res.json({
-    ok: true,
-    service: "content-constructor-gateway",
-    message:
-      "МОЙ КОНТЕНТ-КОНСТРУКТОР gateway is running",
-
-    endpoints: {
-      health: "/health",
-      test_auth: "/test-auth",
-      test_generate: "/test-generate",
-      test_plan_1_5: "/test-plan-1-5",
-
-      generate: "POST /generate",
-
-      plan_1_5:
-        "POST /generate-plan-1-5",
-
-      plan_6_10:
-        "POST /generate-plan-6-10",
-
-      plan_11_15:
-        "POST /generate-plan-11-15",
-
-      plan_16_20:
-        "POST /generate-plan-16-20",
-
-      plan_21_25:
-        "POST /generate-plan-21-25",
-
-      plan_26_30:
-        "POST /generate-plan-26-30"
-    }
-  });
-});
-
-
-// ============================================================
-// TEST AUTH
-// ============================================================
-
-app.get("/test-auth", async (req, res) => {
-  try {
-    const token =
-      await getAccessToken();
-
+app.get(
+  "/health",
+  (req, res) => {
     res.json({
       ok: true,
-      stage: "auth",
-      token_received: !!token
-    });
-  } catch (error) {
-    console.error(
-      "AUTH ERROR:",
-      error.message
-    );
-
-    res.status(500).json({
-      ok: false,
-      stage: "auth",
-      error: error.message
+      service:
+        "content-constructor-gateway",
+      model:
+        GIGACHAT_MODEL,
+      gigachat_key_configured:
+        !!GIGACHAT_KEY,
+      bridge_key_configured:
+        !!BRIDGE_KEY,
+      generation_in_progress:
+        generationInProgress
     });
   }
-});
+);
 
+app.get(
+  "/",
+  (req, res) => {
+    res.json({
+      ok: true,
+      service:
+        "content-constructor-gateway",
+      message:
+        "МОЙ КОНТЕНТ-КОНСТРУКТОР gateway is running",
 
-// ============================================================
-// TEST GENERATE
-// ============================================================
+      endpoints: {
+        health:
+          "/health",
 
-app.get("/test-generate", async (req, res) => {
-  const startedAt = Date.now();
+        test_auth:
+          "/test-auth",
 
-  try {
-    const token =
-      await getAccessToken();
+        test_generate:
+          "/test-generate",
 
-    const response =
-      await axios.post(
-        CHAT_URL,
-        {
-          model: GIGACHAT_MODEL,
+        test_plan_1_5:
+          "/test-plan-1-5",
 
-          messages: [
-            {
-              role: "user",
-              content:
-                "Ответь одним словом: Да"
-            }
-          ],
+        generate:
+          "POST /generate",
 
-          temperature: 0.2,
-          max_tokens: 10
-        },
-        {
-          httpsAgent,
-          timeout: 9000,
+        plan_1_5:
+          "POST /generate-plan-1-5",
 
-          headers: {
-            Authorization:
-              `Bearer ${token}`,
-            "Content-Type":
-              "application/json"
-          }
-        }
+        plan_6_10:
+          "POST /generate-plan-6-10",
+
+        plan_11_15:
+          "POST /generate-plan-11-15",
+
+        plan_16_20:
+          "POST /generate-plan-16-20",
+
+        plan_21_25:
+          "POST /generate-plan-21-25",
+
+        plan_26_30:
+          "POST /generate-plan-26-30"
+      }
+    });
+  }
+);
+
+app.get(
+  "/test-auth",
+  async (req, res) => {
+    try {
+      const token =
+        await getAccessToken();
+
+      res.json({
+        ok: true,
+        stage:
+          "auth",
+        token_received:
+          !!token
+      });
+    } catch (error) {
+      console.error(
+        "AUTH ERROR:",
+        error.message
       );
 
-    const result =
-      response.data?.choices?.[0]?.message?.content ||
-      "";
-
-    res.json({
-      ok: true,
-      stage: "generation",
-      status: response.status,
-      time_ms:
-        Date.now() - startedAt,
-      response: response.data,
-      reels_result: result
-    });
-  } catch (error) {
-    console.error(
-      "TEST GENERATE ERROR:",
-      error.message
-    );
-
-    res.status(500).json({
-      ok: false,
-      stage: "generation",
-      message: error.message,
-      status: error.response?.status,
-      response: error.response?.data,
-      time_ms:
-        Date.now() - startedAt
-    });
+      res.status(500).json({
+        ok: false,
+        stage:
+          "auth",
+        error:
+          error.message
+      });
+    }
   }
-});
+);
 
+app.get(
+  "/test-generate",
+  async (req, res) => {
+    const startedAt =
+      Date.now();
 
-// ============================================================
-// TEST PLAN 1-5
-// ============================================================
+    try {
+      const token =
+        await getAccessToken();
+
+      const response =
+        await axios.post(
+          CHAT_URL,
+          {
+            model:
+              GIGACHAT_MODEL,
+
+            messages: [
+              {
+                role: "user",
+                content:
+                  "Ответь одним словом: Да"
+              }
+            ],
+
+            temperature:
+              0.2,
+
+            max_tokens:
+              10
+          },
+          {
+            httpsAgent,
+            timeout:
+              9000,
+
+            headers: {
+              Authorization:
+                `Bearer ${token}`,
+
+              "Content-Type":
+                "application/json"
+            }
+          }
+        );
+
+      const result =
+        response.data
+          ?.choices?.[0]
+          ?.message
+          ?.content ||
+        "";
+
+      res.json({
+        ok: true,
+        stage:
+          "generation",
+        status:
+          response.status,
+        time_ms:
+          Date.now() -
+          startedAt,
+        response:
+          response.data,
+        reels_result:
+          result
+      });
+    } catch (error) {
+      console.error(
+        "TEST GENERATE ERROR:",
+        error.message
+      );
+
+      res.status(500).json({
+        ok: false,
+        stage:
+          "generation",
+        message:
+          error.message,
+        status:
+          error.response?.status,
+        response:
+          error.response?.data,
+        time_ms:
+          Date.now() -
+          startedAt
+      });
+    }
+  }
+);
 
 app.get(
   "/test-plan-1-5",
   async (req, res) => {
-    const startedAt = Date.now();
+    const startedAt =
+      Date.now();
 
-    if (generationInProgress) {
+    if (
+      !acquireGenerationLock()
+    ) {
       return res.status(429).json({
         ok: false,
-        test: "plan-1-5",
+        test:
+          "plan-1-5",
         error:
           "Generation already in progress"
       });
     }
 
-    generationInProgress = true;
-
     try {
       const result =
         await generatePlanChunk({
-          startDay: 1,
-          endDay: 5,
+          startDay:
+            1,
+
+          endDay:
+            5,
 
           businessInfo:
             "эксперт или предприниматель, который продаёт свои услуги или продукты",
@@ -1935,7 +2659,8 @@ app.get(
           contentStyle:
             "легко, уверенно, современно",
 
-          previousPlan: "",
+          previousPlan:
+            "",
 
           label:
             "TEST PLAN 1-5"
@@ -1943,60 +2668,26 @@ app.get(
 
       res.json({
         ok: true,
-        test: "plan-1-5",
-        status: result.status,
+        test:
+          "plan-1-5",
+
+        status:
+          result.status,
+
         time_ms:
-          Date.now() - startedAt,
+          Date.now() -
+          startedAt,
+
         result_length:
           result.result.length,
-        model: GIGACHAT_MODEL,
 
-        post_filter: {
-          auditor_available:
-            result.audit?.available || false,
+        model:
+          GIGACHAT_MODEL,
 
-          first_audit_passed:
-            result.audit?.passed ?? null,
-
-          triggered:
-            !(result.audit?.passed ?? true),
-
-          repaired:
-            result.repaired || false,
-
-          violations_count:
-            result.audit?.violations?.length || 0,
-
-          violations:
-            result.audit?.violations || [],
-
-          repair_error:
-            result.repair_error || null,
-
-          second_audit_available:
-            result.secondAudit?.available ?? null,
-
-          second_audit_passed:
-            result.secondAudit?.passed ?? null,
-
-          second_audit_violations_count:
-            result.secondAudit?.violations?.length || 0,
-
-          second_audit_violations:
-            result.secondAudit?.violations || [],
-
-          first_audit_raw:
-            result.audit?.raw || null,
-
-          second_audit_raw:
-            result.secondAudit?.raw || null,
-
-          first_audit_error:
-            result.audit?.error || null,
-
-          second_audit_error:
-            result.secondAudit?.error || null
-        },
+        post_filter:
+          buildPostFilterResponse(
+            result
+          ),
 
         reels_result:
           result.result
@@ -2004,23 +2695,23 @@ app.get(
     } catch (error) {
       res.status(500).json({
         ok: false,
-        test: "plan-1-5",
-        message: error.message,
-        status: error.response?.status,
-        response: error.response?.data,
+        test:
+          "plan-1-5",
+        message:
+          error.message,
+        status:
+          error.response?.status,
+        response:
+          error.response?.data,
         time_ms:
-          Date.now() - startedAt
+          Date.now() -
+          startedAt
       });
     } finally {
-      generationInProgress = false;
+      releaseGenerationLock();
     }
   }
 );
-
-
-// ============================================================
-// PLAN ENDPOINTS
-// ============================================================
 
 app.post(
   "/generate-plan-1-5",
@@ -2088,15 +2779,11 @@ app.post(
     )
 );
 
-
-// ============================================================
-// NORMAL GENERATE
-// ============================================================
-
 app.post(
   "/generate",
   async (req, res) => {
-    const startedAt = Date.now();
+    const startedAt =
+      Date.now();
 
     console.log("");
     console.log(
@@ -2115,6 +2802,7 @@ app.post(
         content_type,
         business_info,
         target_audience,
+        offer,
         content_goal,
         reels_topic,
         content_style
@@ -2127,7 +2815,9 @@ app.post(
 
       console.log(
         "Body keys:",
-        Object.keys(req.body || {})
+        Object.keys(
+          req.body || {}
+        )
       );
 
       if (!bridge_key) {
@@ -2146,7 +2836,10 @@ app.post(
         });
       }
 
-      if (bridge_key !== BRIDGE_KEY) {
+      if (
+        bridge_key !==
+        BRIDGE_KEY
+      ) {
         return res.status(401).json({
           ok: false,
           error:
@@ -2194,7 +2887,11 @@ app.post(
         });
       }
 
-      if (isContentPlan(content_type)) {
+      if (
+        isContentPlan(
+          content_type
+        )
+      ) {
         return res.status(400).json({
           ok: false,
           error:
@@ -2238,8 +2935,10 @@ app.post(
         await generateWithGigaChat({
           token,
           prompt,
-          temperature: 0.75,
-          maxTokens: 1800,
+          temperature:
+            0.75,
+          maxTokens:
+            1800,
           label:
             "NORMAL CONTENT"
         });
@@ -2275,60 +2974,23 @@ app.post(
 
       return res.json({
         ok: true,
+
         content_type,
+
         status:
           result.status,
 
         time_ms:
-          Date.now() - startedAt,
+          Date.now() -
+          startedAt,
 
         result_length:
           filtered.result.length,
 
-        post_filter: {
-          auditor_available:
-            filtered.audit?.available ||
-            false,
-
-          first_audit_passed:
-            filtered.audit?.passed ??
-            null,
-
-          triggered:
-            !(filtered.audit?.passed ??
-              true),
-
-          repaired:
-            filtered.repaired,
-
-          violations_count:
-            filtered.audit?.violations?.length ||
-            0,
-
-          violations:
-            filtered.audit?.violations ||
-            [],
-
-          repair_error:
-            filtered.repair_error ||
-            null,
-
-          second_audit_available:
-            filtered.secondAudit?.available ??
-            null,
-
-          second_audit_passed:
-            filtered.secondAudit?.passed ??
-            null,
-
-          second_audit_violations_count:
-            filtered.secondAudit?.violations?.length ||
-            0,
-
-          second_audit_violations:
-            filtered.secondAudit?.violations ||
-            []
-        },
+        post_filter:
+          buildPostFilterResponse(
+            filtered
+          ),
 
         reels_result:
           filtered.result
@@ -2355,6 +3017,7 @@ app.post(
 
       return res.status(500).json({
         ok: false,
+
         message:
           error.message,
 
@@ -2365,34 +3028,34 @@ app.post(
           error.response?.data,
 
         time_ms:
-          Date.now() - startedAt
+          Date.now() -
+          startedAt
       });
     }
   }
 );
 
-
-// ============================================================
-// 404
-// ============================================================
-
-app.use((req, res) => {
-  res.status(404).json({
-    ok: false,
-    error:
-      "Endpoint not found",
-    path: req.path,
-    method: req.method
-  });
-});
-
-
-// ============================================================
-// GLOBAL ERROR
-// ============================================================
+app.use(
+  (req, res) => {
+    res.status(404).json({
+      ok: false,
+      error:
+        "Endpoint not found",
+      path:
+        req.path,
+      method:
+        req.method
+    });
+  }
+);
 
 app.use(
-  (error, req, res, next) => {
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
     console.error(
       "GLOBAL ERROR:",
       error
@@ -2407,83 +3070,86 @@ app.use(
   }
 );
 
+app.listen(
+  PORT,
+  () => {
+    console.log("");
 
-// ============================================================
-// START SERVER
-// ============================================================
+    console.log(
+      "===================================="
+    );
 
-app.listen(PORT, () => {
-  console.log("");
+    console.log(
+      "МОЙ КОНТЕНТ-КОНСТРУКТОР"
+    );
 
-  console.log(
-    "===================================="
-  );
+    console.log(
+      "Gateway started"
+    );
 
-  console.log(
-    "МОЙ КОНТЕНТ-КОНСТРУКТОР"
-  );
+    console.log(
+      "===================================="
+    );
 
-  console.log(
-    "Gateway started"
-  );
+    console.log(
+      "PORT:",
+      PORT
+    );
 
-  console.log(
-    "===================================="
-  );
+    console.log(
+      "MODEL:",
+      GIGACHAT_MODEL
+    );
 
-  console.log(
-    "PORT:",
-    PORT
-  );
+    console.log(
+      "GIGACHAT_KEY:",
+      GIGACHAT_KEY
+        ? "configured"
+        : "MISSING"
+    );
 
-  console.log(
-    "MODEL:",
-    GIGACHAT_MODEL
-  );
+    console.log(
+      "BRIDGE_KEY:",
+      BRIDGE_KEY
+        ? "configured"
+        : "MISSING"
+    );
 
-  console.log(
-    "GIGACHAT_KEY:",
-    GIGACHAT_KEY
-      ? "configured"
-      : "MISSING"
-  );
+    console.log(
+      "AUDITOR:",
+      "V4"
+    );
 
-  console.log(
-    "BRIDGE_KEY:",
-    BRIDGE_KEY
-      ? "configured"
-      : "MISSING"
-  );
+    console.log(
+      "PLAN ENDPOINTS:"
+    );
 
-  console.log(
-    "PLAN ENDPOINTS:"
-  );
+    console.log(
+      "POST /generate-plan-1-5"
+    );
 
-  console.log(
-    "POST /generate-plan-1-5"
-  );
+    console.log(
+      "POST /generate-plan-6-10"
+    );
 
-  console.log(
-    "POST /generate-plan-6-10"
-  );
+    console.log(
+      "POST /generate-plan-11-15"
+    );
 
-  console.log(
-    "POST /generate-plan-11-15"
-  );
+    console.log(
+      "POST /generate-plan-16-20"
+    );
 
-  console.log(
-    "POST /generate-plan-16-20"
-  );
+    console.log(
+      "POST /generate-plan-21-25"
+    );
 
-  console.log(
-    "POST /generate-plan-21-25"
-  );
+    console.log(
+      "POST /generate-plan-26-30"
+    );
 
-  console.log(
-    "POST /generate-plan-26-30"
-  );
-
-  console.log(
-    "===================================="
-  );
-});
+    console.log(
+      "===================================="
+    );
+  }
+);
